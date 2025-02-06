@@ -19,21 +19,10 @@ const colors = {
     http: 'green',
     debug: 'megenta'
 }
-
-const levels = {
-    INFO: 'info',
-    ERROR: 'error',
-    WARN: 'warn',
-    HTTP:'http',
-    VERBOSE:'verbose',
-    DEBUG:'debug',
-    SILLY:'silly'
-}
-
 winston.addColors(colors)
 // Create a Winston logger
 const logger = createLogger({
-    level: levels,
+    level: "info",
     format: combine(timestamp({ format: "YY:MM:DD HH:mm:ss" }), myFromate),
     transports: [
         new transports.Console({ level: 'info', format: consoleLogFormat }),
