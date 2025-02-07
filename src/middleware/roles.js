@@ -1,7 +1,7 @@
 const ApiError = require("../utils/ApiErrors");
 
 const verifyUserRoles = (...userRoles) => {
-    return (req, res, next) => { 
+    return (req, _, next) => {
         try {
             console.log('User role:', req.user?.role); // Debugging log
             console.log('Allowed roles:', userRoles);
@@ -14,7 +14,7 @@ const verifyUserRoles = (...userRoles) => {
             next()
 
         } catch (error) {
-            next(error)           
+            next(error)
         }
     }
 }

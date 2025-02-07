@@ -1,4 +1,4 @@
-/* @user_roles_enum   */
+
 const USER_ROLES_ENUM = Object.freeze({
     ADMIN: 1,
     EXPERT: 2,
