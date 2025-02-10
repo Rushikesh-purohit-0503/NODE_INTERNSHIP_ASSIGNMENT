@@ -5,5 +5,5 @@ exports.slotValidator = Joi.object({
     startTime: Joi.string().required(),
     endTime: Joi.string().required(),
     slotDuration: Joi.number().valid(15, 30, 60).required(),
-    
+    recurring: Joi.boolean().default(false)
 });

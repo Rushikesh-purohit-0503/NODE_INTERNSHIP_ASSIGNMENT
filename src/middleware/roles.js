@@ -1,4 +1,4 @@
-const ApiError = require("../utils/ApiErrors");
+const { ApiError } = require("../utils/ApiErrors");
 
 const verifyUserRoles = (...userRoles) => {
     return (req, _, next) => {
@@ -10,7 +10,9 @@ const verifyUserRoles = (...userRoles) => {
                 throw new ApiError(400, 'User has no credible role');
             }
 
-            if (!userRoles.includes(req.user?.role)) throw new ApiError(403, 'Forbidden you do not have permission.');
+            if (!userRoles.includes(Number(req.user?.role)))
+                throw new ApiError(403, 'Forbidden you do not have permission.');
+
             next()
 
         } catch (error) {
@@ -18,3 +20,5 @@ const verifyUserRoles = (...userRoles) => {
         }
     }
 }
+
+module.exports = verifyUserRoles

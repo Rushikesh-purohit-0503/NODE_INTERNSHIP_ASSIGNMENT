@@ -1,3 +1,4 @@
+const { boolean } = require('joi');
 const mongoose = require('mongoose');
 
 const SlotSchema = new mongoose.Schema(
@@ -28,11 +29,20 @@ const SlotSchema = new mongoose.Schema(
             type: Number,
             default: 5
         },
+        bookings: [
+            {
+                type: mongoose.Schema.Types.ObjectId, ref: "Booking"
+            }
+        ],
         isFull: {
             type: Boolean,
             default: false
         },
         isBlocked: {
+            type: Boolean,
+            default: false
+        },
+        isRecurring: {
             type: Boolean,
             default: false
         }

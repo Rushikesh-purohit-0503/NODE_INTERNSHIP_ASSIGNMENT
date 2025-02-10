@@ -7,13 +7,13 @@ const { determineLogLevel } = require('./utils/loglevel.js')
 const morgan = require('morgan')
 const route = require('./routers/index.js')
 const bodyParser =require('body-parser')
-
+const errorHandler = require('./middleware/errorHandler.js')
 
 
 app.use(cookieParser())
 app.use(bodyParser.urlencoded({ extended: true }))
 app.use(bodyParser.json())
-
+app.use(errorHandler)
 const morganFormat = ":method :url :status :res[content-length] :response-time ms";
 app.use(morgan(morganFormat, {
     stream: {
