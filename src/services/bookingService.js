@@ -139,24 +139,24 @@ const autoCancelNoShowBookings = async () => {
 };
 
 
-const recommendations = async ({ expertId,  date}) => {
+const recommendations = async ({ expertId, date }) => {
     try {
         let slots
         if (expertId && date) {
             // Case 1: Both expertId and date are provided
-            slots = await Slot.find({ expertId, date:date, isBlocked: false }).select('-bookings -__v -createdAt -updatedAt').lean();
-              
+            slots = await Slot.find({ expertId, date: date, isBlocked: false }).select('-bookings -__v -createdAt -updatedAt').lean();
+
 
         } else if (expertId) {
             // Case 2: Only expertId is provided, fetch slots for the nearest available date
             slots = await Slot.find({ expertId, isBlocked: false })
                 .sort({ date: 1, startTime: 1 }) // Sort by nearest date and startTime
                 .select('-bookings -__v -createdAt -updatedAt')
-                .lean(); 
+                .lean();
         } else if (date) {
             // Case 3: Only date is provided, fetch slots across all experts for the date
             slots = await Slot.find({ date, isBlocked: false }).select('-bookings -__v -createdAt -updatedAt').lean();
-            console.log(date) 
+            console.log(date)
         } else {
             // Case 4: No filters provided, fetch popular slots across all experts
             slots = await Slot.find({ isBlocked: false })
@@ -182,7 +182,12 @@ const recommendations = async ({ expertId,  date}) => {
         console.error("Error while recommending ", error)
     }
 }
+
+const cancelBooking = async () => {
+
+}
 module.exports = {
     booking,
-    recommendations
+    recommendations,
+    cancelBooking
 }
