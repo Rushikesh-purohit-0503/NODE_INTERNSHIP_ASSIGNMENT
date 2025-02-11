@@ -19,7 +19,7 @@ router.route('/slots')
         Authantication,verifyRoles(USER_ROLES_ENUM.EXPERT),expretSlotController.deleteSlots)
 
 router.route('/slots')
-    .get(Authantication, verifyRoles(USER_ROLES_ENUM.EXPERT), expretSlotController.getSlots)
+    .get(Authantication, verifyRoles(USER_ROLES_ENUM.EXPERT), expretSlotController.getAllSlots)
 
 router.route('/slots/:slotId')
     .put(Authantication, verifyRoles(USER_ROLES_ENUM.EXPERT),expretSlotController.updateRecurringSlots)

@@ -34,6 +34,10 @@ const SlotSchema = new mongoose.Schema(
                 type: mongoose.Schema.Types.ObjectId, ref: "Booking"
             }
         ],
+        bookedCount: {
+            type: Number,
+            default: 0, // Tracks the current number of bookings for the slot
+        },
         isFull: {
             type: Boolean,
             default: false

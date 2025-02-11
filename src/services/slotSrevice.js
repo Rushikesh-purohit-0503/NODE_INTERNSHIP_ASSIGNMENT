@@ -27,14 +27,19 @@ const createSlots = async ({ expertId, date, startTime, endTime, slotDuration, r
     // Handle recurring slots
     if (recurring) {
         const givenDate = new Date(date);
+
+
         // Get the day of the week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
-        const dayOfWeek = givenDate.getDay();
-        console.log(typeof dayOfWeek)
-        if (dayOfWeek === Number(6)) {
-            givenDate.setDate(givenDate.getDate() + 2); // If Saturday, move to Monday
-        } else if (dayOfWeek === 0) {
-            givenDate.setDate(givenDate.getDate() + 1); // If Sunday, move to Monday
-        }
+        // const dayOfWeek = givenDate.getDay();
+        // console.log(typeof dayOfWeek)
+
+        // if (dayOfWeek === 6) {
+        //     givenDate.setDate(givenDate.getDate() + 2); // If Saturday, move to Monday
+        // } else if (dayOfWeek === 0) {
+        //     givenDate.setDate(givenDate.getDate() + 1); // If Sunday, move to Monday
+        // }
+
+        
         // Define the recurrence rule for the next 5 occurrences
         const rule = new RRule({
             freq: RRule.WEEKLY, // Weekly recurrence
@@ -54,7 +59,6 @@ const createSlots = async ({ expertId, date, startTime, endTime, slotDuration, r
             startTime,
             endTime,
             slotDuration,
-
         }));
 
         // Check for conflicts with existing slots
@@ -88,36 +92,70 @@ const createSlots = async ({ expertId, date, startTime, endTime, slotDuration, r
 
 
 const deleteSlots = async ({ expertId, startDate, endDate }) => {
-    const result = await Slot.deleteMany({
-        expertId,
-        date: { $gte: startDate, $lte: endDate },
-    });
+    try {
+        const result = await Slot.deleteMany({
+            expertId,
+            date: { $gte: startDate, $lte: endDate },
+        });
 
-    return result;
+        return result;
+    } catch (error) {
+        console.error("Error while deleting slots", error)
+    }
 };
 
 
-const getSlots = async ({ expertId, startDate, endDate }) => {
-    const slots = await Slot.find({
-        expertId: new mongoose.Types.ObjectId(expertId),
-        date: { $gte: startDate, $lte: endDate },
-    });
-    // Format response
-    if (slots) {
-        return slots.map((slot) => ({
-            _id: slot._id,
-            date: slot.date,
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-            slotDuration: slot.slotDuration,
-            isFull: slot.bookings.length >= 5,
-            bookings: slot.bookings,
-            isReCurring: slot.isRecurring
-        }))
-    };
+const getAllSlots = async ({ expertId, startDate, endDate }) => {
+    try {
+        const slots = await Slot.find({
+            expertId: new mongoose.Types.ObjectId(expertId),
+            date: { $gte: startDate, $lte: endDate },
+            isBlocked: false
+        });
+        // Format response
+        if (slots) {
+            return slots.map((slot) => ({
+                _id: slot._id,
+                date: slot.date,
+                startTime: slot.startTime,
+                endTime: slot.endTime,
+                slotDuration: slot.slotDuration,
+                isFull: slot.bookings.length >= 5,
+                bookings: slot.bookings,
+                isReCurring: slot.isRecurring,
+
+            }))
+        };
+    } catch (error) {
+        console.error("Error while getting all slots", error)
+    }
 };
 
+const getAllRecurringSlots = async ({ expertId, startDate, endDate }) => {
+    try {
+        const recurringSlots = await Slot.find({
+            expertId: new mongoose.Types.ObjectId(expertId),
+            date: { $gte: startDate, $lte: endDate },
+            isBlocked: false,
+            isRecurring: true
+        })
+        if (recurringSlots) {
+            return recurringSlots.map((slot) => ({
+                _id: slot._id,
+                date: slot.date,
+                startTime: slot.startTime,
+                endTime: slot.endTime,
+                slotDuration: slot.slotDuration,
+                isFull: slot.bookings.length >= 5,
+                bookings: slot.bookings,
+                isReCurring: slot.isRecurring,
 
+            }))
+        };
+    } catch (error) {
+        
+    }
+}
 // const generateRecurringSlots = ({ expertId, startDate, endDate, startTime, endTime, slotDuration, recurringDays }) => {
 //     const slots = [];
 //     const currentDate = new Date(startDate);
@@ -188,7 +226,7 @@ const updateRecurringSlots = async ({
 
 
     /** if the slotId is provided then only that slot is updated **/
-    console.log(slotId.toString())
+    // console.log(slotId.toString())
     if (slotId) {
 
 
@@ -199,7 +237,7 @@ const updateRecurringSlots = async ({
         if (!slot) {
             throw new Error("Slot not found.");
         }
- 
+
         // Validate that the slot is recurring
         if (!slot.isRecurring) {
             throw new Error("The specified slot is not recurring.");
@@ -227,12 +265,12 @@ const updateRecurringSlots = async ({
                 ...(newEndTime && { endTime: newEndTime }),
                 ...(slotDuration && { slotDuration }),
             },
-            { new: true } // Return the updated slot
+            { new: true }
         );
 
         return { message: "Slot updated successfully.", updatedSlot };
     }
-    // Fetch all recurring slots starting from the given date
+
     // Fetch all recurring slots starting from the given date and matching the criteria
     const recurringSlots = await Slot.find({
         expertId,
@@ -290,7 +328,7 @@ const updateRecurringSlots = async ({
 module.exports = {
     autoCancelNoShow,
     markSlotsAsFull,
-    getSlots,
+    getAllSlots,
     deleteSlots,
     createSlots,
     updateRecurringSlots

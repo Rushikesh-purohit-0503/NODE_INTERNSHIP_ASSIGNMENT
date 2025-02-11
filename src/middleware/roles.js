@@ -1,17 +1,18 @@
 const { ApiError } = require("../utils/ApiErrors");
+const { ApiResponse } = require("../utils/ApiResponse");
 
 const verifyUserRoles = (...userRoles) => {
-    return (req, _, next) => {
+    return (req, res, next) => {
         try {
-            console.log('User role:', req.user?.role); // Debugging log
-            console.log('Allowed roles:', userRoles);
+            // console.log('User role:', req.user?.role); // Debugging log
+            // console.log('Allowed roles:', userRoles);
 
             if (!req?.user?.role) {
-                throw new ApiError(400, 'User has no credible role');
+               return res.status(400).json(new ApiResponse(400,{},"User has no credible role"))
             }
 
             if (!userRoles.includes(Number(req.user?.role)))
-                throw new ApiError(403, 'Forbidden you do not have permission.');
+                return res.status(403).json(new ApiResponse(403,{},"Forbidden you do not have permission."))
 
             next()
 

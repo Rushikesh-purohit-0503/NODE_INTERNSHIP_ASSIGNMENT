@@ -35,6 +35,6 @@ const BookingSchema = new mongoose.Schema(
 );
 
 // Restrict a client to max 3 bookings per expert per week
-BookingSchema.index({ clientId: 1, expertId: 1, createdAt: 1 });
+BookingSchema.index({ clientId: 1, expertId: 1 });
 
 module.exports = mongoose.model('Booking', BookingSchema);
