@@ -1,7 +1,8 @@
 const Slot = require('../models/expertSlotModel')
 const Booking = require('../models/bookingModel');
 const { default: mongoose } = require('mongoose');
-const { RRule } = require('rrule')
+const { RRule } = require('rrule');
+const { redis } = require('../utils/Redis');
 
 const createSlots = async ({ expertId, date, startTime, endTime, slotDuration, recurring }) => {
     // Validate slot duration
@@ -115,6 +116,16 @@ const getAllSlots = async ({ expertId }) => {
         if (slots) {
             const availableSlots = []
             const bookedSlots = []
+            const expert_id = new mongoose.Types.ObjectId(expertId).toString()
+            const cacheKey = `availableSlots:${expert_id}`;
+            let cachedAvailableSlots = await redis.get(cacheKey)
+            if (cachedAvailableSlots) {
+                return {
+                    status: true,
+                    availableSlots: JSON.parse(cachedAvailableSlots),
+                 
+                }
+            }
             slots.forEach(
                 (slot) => {
                     const isFull = slot.bookings.length >= slot.maxBookings
@@ -127,7 +138,6 @@ const getAllSlots = async ({ expertId }) => {
                         isFull: slot.bookings.length >= slot.maxBookings,
                         bookings: slot.bookings,
                         isReCurring: slot.isRecurring,
-
                     }
 
                     if (isFull) {
@@ -138,7 +148,7 @@ const getAllSlots = async ({ expertId }) => {
 
                 }
             )
-
+            await redis.setex(cacheKey, 3600, JSON.stringify(availableSlots))
             return {
                 status: true,
                 availableSlots: availableSlots,
@@ -152,78 +162,6 @@ const getAllSlots = async ({ expertId }) => {
         console.error("Error while getting all slots", error)
     }
 };
-
-const getAllRecurringSlots = async ({ expertId, startDate, endDate }) => {
-    try {
-        const recurringSlots = await Slot.find({
-            expertId: new mongoose.Types.ObjectId(expertId),
-            date: { $gte: startDate, $lte: endDate },
-            isBlocked: false,
-            isRecurring: true
-        })
-        if (recurringSlots) {
-            return recurringSlots.map((slot) => ({
-                _id: slot._id,
-                date: slot.date,
-                startTime: slot.startTime,
-                endTime: slot.endTime,
-                slotDuration: slot.slotDuration,
-                isFull: slot.bookings.length >= 5,
-                bookings: slot.bookings,
-                isReCurring: slot.isRecurring,
-
-            }))
-        };
-    } catch (error) {
-
-    }
-}
-// const generateRecurringSlots = ({ expertId, startDate, endDate, startTime, endTime, slotDuration, recurringDays }) => {
-//     const slots = [];
-//     const currentDate = new Date(startDate);
-
-//     while (currentDate <= endDate) {
-//         const dayOfWeek = currentDate.getDay();
-
-//         if (recurringDays.includes(dayOfWeek)) {
-//             slots.push({
-//                 expertId,
-//                 date: new Date(currentDate),
-//                 startTime,
-//                 endTime,
-//                 slotDuration,
-//             });
-//         }
-
-//         currentDate.setDate(currentDate.getDate() + 1);
-//     }
-
-//     return slots;
-// };
-
-// const 
-
-const markSlotsAsFull = async (slotId) => {
-    const slot = await Slot.findById(slotId);
-    if (slot.bookings.length >= 5) {
-        slot.isFull = true;
-        await slot.save();
-    };
-}
-
-
-const autoCancelNoShow = async (slotId) => {
-    const slot = await Slot.findById(slotId);
-
-    const noShowBookings = slot.bookings.filter(
-        (booking) => ((booking.status === 'no-show') && (Date.now() - booking.startTime > booking.gracePeriod))
-    );
-
-    noShowBookings.forEach(async (booking) => {
-        await Booking.findByIdAndUpdate(booking._id, { status: "Cancelled" });
-    });
-};
-
 
 const updateRecurringSlots = async ({
     expertId,
@@ -345,8 +283,6 @@ const updateRecurringSlots = async ({
 }
 
 module.exports = {
-    autoCancelNoShow,
-    markSlotsAsFull,
     getAllSlots,
     deleteSlots,
     createSlots,

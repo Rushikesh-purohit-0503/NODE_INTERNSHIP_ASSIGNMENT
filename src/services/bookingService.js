@@ -1,7 +1,7 @@
 const Slot = require('../models/expertSlotModel')
 const Booking = require('../models/bookingModel')
 const { default: mongoose } = require('mongoose')
-const { redis } = require('../utils/Redis')
+const { redis, redisSubscriber } = require('../utils/Redis')
 
 const booking = async ({ clientId, expertId, date, time }) => {
     try {
@@ -55,7 +55,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
             return "You have already booked this slot.";
         }
 
-       
+
 
         const bookSlot = await Booking.create({
             expertId: expertId,
@@ -63,6 +63,10 @@ const booking = async ({ clientId, expertId, date, time }) => {
             slotId: slot?._id,
 
         })
+
+        const ttl = bookSlot.gracePeriod * 60; // Convert grace period to seconds
+        const redisKey = `booking:noshow:${bookSlot._id}`
+        await redis.setex(redisKey, ttl, JSON.stringify({ bookingId: bookSlot._id }));
 
         // Update the bookings array in the slot schema
         await Slot.findByIdAndUpdate(slot._id, {
@@ -133,13 +137,13 @@ const recommendations = async ({ }) => {
             return JSON.parse(cachedRecommendations)
         }
 
-       
+
         slots = await Slot.find({ isBlocked: false })
             .sort({ bookedCount: -1 }) // Sort by popularity (most booked)
             .select('-bookings -__v -createdAt -updatedAt')
             .lean();
         console.log("fourth")
-   
+
         if (!slots) {
             return "No slots available for the selected date."
         }
@@ -229,6 +233,46 @@ const getAllBookings = async ({ clientId }) => {
         throw new Error("Error while getting client bookings", error)
     }
 }
+
+
+// redisSubscriber.on('message', async ( channel, key) => {
+//     if (!expiredKey || typeof expiredKey !== 'string') {
+//         console.error("Expired key is invalid:", expiredKey);
+//         return;
+//     }
+//     if (key.startsWith('booking:noshow:')) {
+//         const bookingId = key.split(':')[2]; // Extract the booking ID from the Redis key
+//         await handleNoShow(bookingId);
+//     }
+// });
+
+const handleNoShow = async (bookingId) => {
+    try {
+        
+        const booking = await Booking.findById(new mongoose.Types.ObjectId(bookingId));
+
+        if (!booking || booking.status !== 'booked') {
+            console.log(`Booking ${bookingId} is not eligible for no-show processing.`);
+            return;
+        }
+
+        // Mark the booking as 'no-show'
+        booking.status = 'no-show';
+        await booking.save();
+
+        // Update the associated slot to make it available again
+        await Slot.findByIdAndUpdate(booking.slotId, {
+            $pull: { bookings: booking._id },
+            $inc: { bookedCount: -1 },
+            isFull: false,
+        });
+
+        await Booking.findByIdAndDelete(bookingId)
+        console.log(`Booking ${bookingId} marked as no-show and slot updated.`);
+    } catch (error) {
+        console.error(`Error handling no-show for booking ${bookingId}:`, error);
+    }
+};
 module.exports = {
     booking,
     recommendations,
