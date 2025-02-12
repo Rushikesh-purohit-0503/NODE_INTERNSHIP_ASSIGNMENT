@@ -1,0 +1,150 @@
+const Booking = require('../models/bookingModel')
+const Slot = require('../models/expertSlotModel')
+
+const getTotalBookingsPerExpert = async () => {
+    try {
+        const allBookings = await Booking.aggregate([
+            {
+                $group: {
+                    _id: '$expertId',
+                    totalBookings: { $sum: 1 },
+                },
+
+            },
+            {
+                $lookup: {
+                    from: "users", // Lookup details from the User collection
+                    localField: "_id",
+                    foreignField: "_id",
+                    as: "expertDetails"
+                }
+            },
+            {
+                $unwind: "$expertDetails" // Flatten the expert details array
+            },
+            {
+                $project: {
+                    expertId: "$_id",
+                    _id: 0,
+                    totalBookings: 1,
+                    expertName: "$expertDetails.name",
+                    expertEmail: "$expertDetails.email"
+                }
+            }
+
+        ])
+        if (allBookings) {
+            return {
+                status: true,
+                message: "Total bookings retrieved successfully",
+                data: { allBookings }
+            };
+        } else {
+            return {
+                status: false,
+                message: "There are no Bookings",
+                data: {}
+            }
+        }
+    } catch (error) {
+        console.error("Error while calculating total bookings:", error);
+        throw new Error(error)
+        // return {
+        //     status: false,
+        //     message: "Error occurred while retrieving total bookings",
+        //     error: error.message
+        // };
+    }
+};
+const getUtilizationRate = async ({ expertId, startDate, endDate }) => {
+    try {
+        // Fetch total slots for the expert within the period
+        const totalSlots = await Slot.countDocuments({
+            expertId,
+            date: { $gte: new Date(startDate), $lte: new Date(endDate) },
+            isBlocked: false
+        });
+
+        // Fetch total booked slots
+        const bookedSlots = await Slot.aggregate([
+            {
+                $match: {
+                    expertId: new mongoose.Types.ObjectId(expertId),
+                    date: { $gte: new Date(startDate), $lte: new Date(endDate) },
+                    isBlocked: false
+                }
+            },
+            {
+                $project: {
+                    bookedCount: { $size: "$bookings" }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalBookedSlots: { $sum: "$bookedCount" }
+                }
+            }
+        ]);
+
+        const totalBookedSlots = bookedSlots[0]?.totalBookedSlots || 0;
+        const utilizationRate = totalSlots
+            ? ((totalBookedSlots / totalSlots) * 100).toFixed(2)
+            : 0;
+
+        return {
+            status: true,
+            message: "Utilization rate calculated successfully",
+            data: {
+                totalSlots,
+                totalBookedSlots,
+                utilizationRate: `${utilizationRate}%`
+            }
+        };
+    } catch (error) {
+        console.error("Error while calculating utilization rate:", error);
+        return {
+            status: false,
+            message: "Error occurred while calculating utilization rate",
+            error: error.message
+        };
+    }
+};
+const getNoShowStatistics = async ({ startDate, endDate }) => {
+    try {
+        const noShowStats = await Booking.aggregate([
+            {
+                $match: {
+                    date: { $gte: new Date(startDate), $lte: new Date(endDate) },
+                    status: "no-show"
+                }
+            },
+            {
+                $group: {
+                    _id: "$clientId", // Group by client ID
+                    noShowCount: { $sum: 1 } // Count the number of no-shows
+                }
+            }
+        ]);
+
+        return {
+            status: true,
+            message: "No-show statistics retrieved successfully",
+            data: noShowStats
+        };
+    } catch (error) {
+        console.error("Error while calculating no-show statistics:", error);
+        return {
+            status: false,
+            message: "Error occurred while retrieving no-show statistics",
+            error: error.message
+        };
+    }
+};
+
+
+module.exports = {
+    getNoShowStatistics,
+    getUtilizationRate,
+    getTotalBookingsPerExpert
+}

@@ -39,7 +39,7 @@ const createSlots = async ({ expertId, date, startTime, endTime, slotDuration, r
         //     givenDate.setDate(givenDate.getDate() + 1); // If Sunday, move to Monday
         // }
 
-        
+
         // Define the recurrence rule for the next 5 occurrences
         const rule = new RRule({
             freq: RRule.WEEKLY, // Weekly recurrence
@@ -105,27 +105,49 @@ const deleteSlots = async ({ expertId, startDate, endDate }) => {
 };
 
 
-const getAllSlots = async ({ expertId, startDate, endDate }) => {
+const getAllSlots = async ({ expertId }) => {
     try {
         const slots = await Slot.find({
             expertId: new mongoose.Types.ObjectId(expertId),
-            date: { $gte: startDate, $lte: endDate },
             isBlocked: false
         });
         // Format response
         if (slots) {
-            return slots.map((slot) => ({
-                _id: slot._id,
-                date: slot.date,
-                startTime: slot.startTime,
-                endTime: slot.endTime,
-                slotDuration: slot.slotDuration,
-                isFull: slot.bookings.length >= 5,
-                bookings: slot.bookings,
-                isReCurring: slot.isRecurring,
+            const availableSlots = []
+            const bookedSlots = []
+            slots.forEach(
+                (slot) => {
+                    const isFull = slot.bookings.length >= slot.maxBookings
+                    const formattedSlot = {
+                        _id: slot._id,
+                        date: slot.date,
+                        startTime: slot.startTime,
+                        endTime: slot.endTime,
+                        slotDuration: slot.slotDuration,
+                        isFull: slot.bookings.length >= slot.maxBookings,
+                        bookings: slot.bookings,
+                        isReCurring: slot.isRecurring,
 
-            }))
-        };
+                    }
+
+                    if (isFull) {
+                        bookedSlots.push(formattedSlot)
+                    } else {
+                        availableSlots.push(formattedSlot)
+                    }
+
+                }
+            )
+
+            return {
+                status: true,
+                availableSlots: availableSlots,
+                bookedSlots: bookedSlots
+            }
+        } else return {
+            status: false,
+            message: "there are no slot created by you"
+        }
     } catch (error) {
         console.error("Error while getting all slots", error)
     }
@@ -153,7 +175,7 @@ const getAllRecurringSlots = async ({ expertId, startDate, endDate }) => {
             }))
         };
     } catch (error) {
-        
+
     }
 }
 // const generateRecurringSlots = ({ expertId, startDate, endDate, startTime, endTime, slotDuration, recurringDays }) => {
@@ -228,9 +250,6 @@ const updateRecurringSlots = async ({
     /** if the slotId is provided then only that slot is updated **/
     // console.log(slotId.toString())
     if (slotId) {
-
-
-
         // Update a single slot if slotId is provided
         const slot = await Slot.findOne({ _id: slotId, expertId: expertId });
 

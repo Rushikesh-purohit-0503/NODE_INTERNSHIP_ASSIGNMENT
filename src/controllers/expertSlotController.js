@@ -43,7 +43,7 @@ const deleteSlots = async (req, res) => {
 
         const result = await slotService.deleteSlots({ expertId, startDate: new Date(startDate), endDate: new Date(endDate) })
         if (result.deletedCount === 0) {
-            return res.status(500).json(new ApiResponse(500, result, "Error while deleting slot"))
+            return res.status(404).json(new ApiResponse(404, result, "There is no slot that can be deleted"))
         }
         return res.status(200).json(new ApiResponse(200, result, "Slots deleted succesfully"))
     } catch (error) {
@@ -54,19 +54,17 @@ const deleteSlots = async (req, res) => {
 const getAllSlots = async (req, res) => {
     try {
         const { id: expertId } = req.user?._id;
-        let { startDate, endDate } = req.query;
-        if (!endDate) endDate = endDate || startDate
+        if (!expertId) return res.status(400).json(new ApiResponse(400, {}, "please login first"))
         const result = await slotService.getAllSlots({
             expertId,
-            startDate,
-            endDate,
         });
 
-        if (result.length === 0) return res.status(400).json(new ApiResponse(400, result, 'Enter valid date or There are no such available slots'))
+        if (!result.status) return res.status(400).json(new ApiResponse(400, result, 'There are no such available slots'))
 
-        return res.status(200).json(new ApiResponse(200, result, `Slots for user ${result.expertId} fetched`))
+        return res.status(200).json(new ApiResponse(200, {availableSlots:result.availableSlots,bookedSlots: result.bookedSlots}, `Slots for user fetched`))
     } catch (error) {
-        return res.status(500).json(new ApiResponse(500, {}, "Error while fetching"))
+        throw new ApiError(500,"Error while fetching",error     )
+        return res.status(500).json(new ApiResponse(500, {error:error}, "Error while fetching"))
         // console.log(error)
         // throw new ApiError(500, 'Error fetching slots', error)
     }

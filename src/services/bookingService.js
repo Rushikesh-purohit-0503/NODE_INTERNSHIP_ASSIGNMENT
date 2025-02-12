@@ -1,11 +1,11 @@
 const Slot = require('../models/expertSlotModel')
 const Booking = require('../models/bookingModel')
 const { default: mongoose } = require('mongoose')
-
+const { redis } = require('../utils/Redis')
 
 const booking = async ({ clientId, expertId, date, time }) => {
     try {
-        await autoCancelNoShowBookings()
+
         const startOfWeek = new Date();
         startOfWeek.setHours(0, 0, 0, 0);
         startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1); // Start of the week (Monday)
@@ -45,12 +45,6 @@ const booking = async ({ clientId, expertId, date, time }) => {
         if (!slot) {
             return "Slot does not exist.";
         }
-
-        // // Check if the slot is blocked or full
-        // if (slot.isBlocked) {
-        //     return "Slot is unavailable.";
-        // }
-
         const existingBooking = await Booking.findOne({
             clientId: clientId,
             slotId: slot._id
@@ -61,10 +55,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
             return "You have already booked this slot.";
         }
 
-        // const freshSlot = await Slot.findById(slot._id);
-        // if (freshSlot.isFull) {
-        //     return "Slot became full while booking. Please choose another slot.";
-        // }
+       
 
         const bookSlot = await Booking.create({
             expertId: expertId,
@@ -93,20 +84,13 @@ const booking = async ({ clientId, expertId, date, time }) => {
     }
 }
 
-// const markSlotsAsFull = async (slotId) => {
-//     const slot = await Slot.findById(slotId);
-//     if (slot.bookings.length >= 5) {
-//         slot.isFull = true;
-//         await slot.save();
-//     };
-// }
 
 
 
 const autoCancelNoShowBookings = async () => {
     try {
         const now = new Date();
-
+        console.log(now)
         // Find all bookings where the grace period has passed
         const expiredBookings = await Booking.find({
             status: 'booked',
@@ -139,32 +123,23 @@ const autoCancelNoShowBookings = async () => {
 };
 
 
-const recommendations = async ({ expertId, date }) => {
+const recommendations = async ({ }) => {
     try {
         let slots
-        if (expertId && date) {
-            // Case 1: Both expertId and date are provided
-            slots = await Slot.find({ expertId, date: date, isBlocked: false }).select('-bookings -__v -createdAt -updatedAt').lean();
 
-
-        } else if (expertId) {
-            // Case 2: Only expertId is provided, fetch slots for the nearest available date
-            slots = await Slot.find({ expertId, isBlocked: false })
-                .sort({ date: 1, startTime: 1 }) // Sort by nearest date and startTime
-                .select('-bookings -__v -createdAt -updatedAt')
-                .lean();
-        } else if (date) {
-            // Case 3: Only date is provided, fetch slots across all experts for the date
-            slots = await Slot.find({ date, isBlocked: false }).select('-bookings -__v -createdAt -updatedAt').lean();
-            console.log(date)
-        } else {
-            // Case 4: No filters provided, fetch popular slots across all experts
-            slots = await Slot.find({ isBlocked: false })
-                .sort({ bookedCount: -1 }) // Sort by popularity (most booked)
-                .select('-bookings -__v -createdAt -updatedAt')
-                .lean();
-            console.log("fourth")
+        const cacheKey = `recommendations`;
+        let cachedRecommendations = await redis.get(cacheKey)
+        if (cachedRecommendations) {
+            return JSON.parse(cachedRecommendations)
         }
+
+       
+        slots = await Slot.find({ isBlocked: false })
+            .sort({ bookedCount: -1 }) // Sort by popularity (most booked)
+            .select('-bookings -__v -createdAt -updatedAt')
+            .lean();
+        console.log("fourth")
+   
         if (!slots) {
             return "No slots available for the selected date."
         }
@@ -177,17 +152,86 @@ const recommendations = async ({ expertId, date }) => {
         // Step 4: Return top 3 recommended slots
         const recommendations = sortedSlots.slice(0, 3);
 
+        await redis.setex(cacheKey, 3600, JSON.stringify(recommendations));
         return recommendations
     } catch (error) {
         console.error("Error while recommending ", error)
     }
 }
 
-const cancelBooking = async () => {
+const cancelBooking = async ({ clientId, bookingId }) => {
+    try {
 
+        const booking = await Booking.findById(bookingId)
+        if (!booking) return {
+            success: false,
+            message: "Booking not found",
+        };
+
+        if (booking.clientId.toString() !== clientId.toString()) {
+            return {
+                success: false,
+                message: "Unauthorized: You do not have permission to cancel this booking.",
+            };
+        }
+        const slot = await Slot.findById(booking.slotId)
+
+
+        if (!slot) return {
+            success: false,
+            message: "The slot associated with this booking was not found."
+        }
+
+        slot.bookings = slot.bookings.filter((id) => id.toString() !== bookingId.toString())
+        slot.bookedCount = Math.max(slot.bookings.length, 0)
+        slot.isFull = slot.bookedCount >= slot.maxBookings
+        await slot.save()
+
+        await Booking.findByIdAndDelete(bookingId)
+
+        return {
+            success: true,
+            message: "Booking canceled successfully."
+        }
+    } catch (error) {
+        throw new Error(error)
+
+    }
+}
+
+const getAllBookings = async ({ clientId }) => {
+    try {
+
+        const cacheKey = `clientBookings:${clientId.toString()}`;
+        const cachedBookings = await redis.get(cacheKey);
+
+        if (cachedBookings) {
+            return JSON.parse(cachedBookings);
+        }
+        const bookings = await Booking.find({ clientId: clientId }).select('-__v -createdAt -updatedAt')
+        if (!bookings) return {
+            status: false,
+            message: "No bookings associated with provided client-Id "
+        }
+        if (bookings) {
+            const bookingsData = bookings.map((booking) => ({
+                _id: booking._id,
+                clientId: booking.clientId,
+                expertId: booking.expertId,
+                slotId: booking.slotId,
+                status: booking.status,
+                gracePeriod: booking.gracePeriod
+            }))
+            await redis.setex(cacheKey, 1800, JSON.stringify(bookingsData));
+            return bookingsData;
+        }
+    } catch (error) {
+        throw new Error("Error while getting client bookings", error)
+    }
 }
 module.exports = {
     booking,
     recommendations,
-    cancelBooking
+    cancelBooking,
+    getAllBookings
 }

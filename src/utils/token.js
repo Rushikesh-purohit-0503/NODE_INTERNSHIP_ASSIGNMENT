@@ -7,7 +7,7 @@ const createAuthToken = async (user) => {
             name: user.name
         }, process.env.JWT_TOKEN_SECRET, { expiresIn: process.env.JWT_TOKEN_EXPITY })
         user.authToken = authToken
-        await user.save({ validation: false })
+        await user.save({ validationBeforeSave: false })
 
         return authToken
     } catch (error) {

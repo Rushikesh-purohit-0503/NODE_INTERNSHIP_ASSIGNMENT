@@ -23,7 +23,7 @@ const BookingSchema = new mongoose.Schema(
             default: 'booked'
         },
         gracePeriod:{
-            type: String,
+            type: Number,
             default: 15
         },
         createdAt: {

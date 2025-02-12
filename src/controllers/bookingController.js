@@ -34,12 +34,44 @@ const Recommendations = async (req, res) => {
     try {
         const recommended = await bookingService.recommendations({})
         if (!recommended || typeof recommended !== 'object') return res.status(404).json(new ApiResponse(404, recommended, "No slots available in near future"))
-        return res.status(200).json(new ApiResponse(200, {recommendedSlots:recommended}, "This are the slots available for near future."))
+        return res.status(200).json(new ApiResponse(200, { recommendedSlots: recommended }, "This are the slots available for near future."))
     } catch (error) {
         return res.status(500).json(new ApiResponse(500, error, error.message))
     }
 }
+
+const cancelBooking = async (req, res) => {
+    try {
+        let { id: bookingId } = req.params
+
+        const { id: clientId } = req.user._id
+        console.log(clientId)
+        if (!bookingId) return res.status(400).json(new ApiResponse(400, {}, "No bookingId provided"))
+
+        const canceled = await bookingService.cancelBooking({ bookingId: new mongoose.Types.ObjectId(bookingId), clientId: new mongoose.Types.ObjectId(clientId) })
+
+        if (canceled.success) return res.status(200).json(new ApiResponse(200, canceled, canceled.message))
+        else return res.status(400).json(new ApiResponse(400, canceled, canceled.message))
+    } catch (error) {
+        return res.status(500).json(new ApiResponse(500, error, error.message))
+    }
+}
+
+const getAllBookingsForClient = async (req, res) => {
+    try {
+        let { id: clientId } = req.user._id
+        if(!clientId) return res.status(401).json(new ApiResponse(401,{},"Please login first"))
+        
+        const bookings = await bookingService.getAllBookings({clientId: new mongoose.Types.ObjectId(clientId)})
+        if(bookings) return res.status(200).json(new ApiResponse(200,bookings,"bookings fetched succesfully"))
+        
+    } catch (error) {
+        return res.status(500).json(new ApiResponse(500, error, "Error fetching bookings"))
+    }
+}
 module.exports = {
     bookSlot,
-    Recommendations
+    Recommendations,
+    cancelBooking,
+    getAllBookingsForClient
 }

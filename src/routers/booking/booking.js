@@ -14,5 +14,17 @@ router.route('/')
         bookingController.bookSlot)
 
 router.route('/recommendations')
-    .get(Authantication,verifyRoles(USER_ROLES_ENUM.CLIENT),bookingController.Recommendations)
+    .get(Authantication,
+        verifyRoles(USER_ROLES_ENUM.CLIENT),
+        bookingController.Recommendations)
+
+router.route('/:id')
+    .delete(Authantication,
+        verifyRoles(USER_ROLES_ENUM.CLIENT),
+        bookingController.cancelBooking)
+
+router.route('/')
+    .get(Authantication,
+        verifyRoles(USER_ROLES_ENUM.CLIENT),
+        bookingController.getAllBookingsForClient)
 module.exports = router

@@ -31,7 +31,8 @@ const SlotSchema = new mongoose.Schema(
         },
         bookings: [
             {
-                type: mongoose.Schema.Types.ObjectId, ref: "Booking"
+                type: mongoose.Schema.Types.ObjectId, 
+                ref: "Booking"
             }
         ],
         bookedCount: {

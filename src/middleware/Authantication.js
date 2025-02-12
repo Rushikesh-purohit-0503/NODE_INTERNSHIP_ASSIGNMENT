@@ -8,7 +8,7 @@ const Authantication = async (req, res, next) => {
     try {
         const token = req.cookies?.authToken || req.header('Authorization')?.replace('Bearer ', '')
 
-        if (!token) return res.status(401).json(new ApiResponse(401, {}, "no token provided Unauthorized"))
+        if (!token) return res.status(401).json(new ApiResponse(401, {}, "Unauthorized (Not autherized to access this route)")      )
 
         const decoded = jwt.verify(token, process.env.JWT_TOKEN_SECRET);
         const user = await userModel.findById(decoded._id).select("-password -refreshToken")
