@@ -21,7 +21,7 @@ router.route('/slots')
 router.route('/slots')
     .get(Authantication, verifyRoles(USER_ROLES_ENUM.EXPERT), expretSlotController.getAllSlots)
 
-router.route('/slots/:slotId')
+router.route('/slots/:slotId?')
     .put(Authantication, verifyRoles(USER_ROLES_ENUM.EXPERT),expretSlotController.updateRecurringSlots)
 
 module.exports = router
