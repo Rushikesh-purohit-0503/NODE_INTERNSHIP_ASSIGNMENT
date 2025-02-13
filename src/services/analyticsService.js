@@ -57,7 +57,8 @@ const getTotalBookingsPerExpert = async () => {
         //     error: error.message
         // };
     }
-};
+}
+
 // const getUtilizationRate = async ({ expertId, startDate, endDate }) => {
 //     try {
         
@@ -146,7 +147,7 @@ const getTotalBookingsPerExpert = async () => {
 
 
 module.exports = {
-    getNoShowStatistics,
+    // getNoShowStatistics,
     // getUtilizationRate,
-    // getTotalBookingsPerExpert
+    getTotalBookingsPerExpert
 }
