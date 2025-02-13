@@ -36,7 +36,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
                 isFull: false,
             },
             {
-                $set: { isFull: true } // Temporarily mark as full to prevent race conditions
+                $set: { isFull: true } // Temporarily marked as full to prevent race conditions
             },
             {
                 new: true
@@ -64,22 +64,26 @@ const booking = async ({ clientId, expertId, date, time }) => {
 
         })
 
-        const ttl = bookSlot.gracePeriod * 60; // Convert grace period to seconds
+        const ttl = bookSlot.gracePeriod * 60; 
         const redisKey = `booking:noshow:${bookSlot._id}`
         await redis.setex(redisKey, ttl, JSON.stringify({ bookingId: bookSlot._id }));
 
-        // Update the bookings array in the slot schema
+        
         await Slot.findByIdAndUpdate(slot._id, {
             $push: { bookings: bookSlot._id },
             $inc: { bookedCount: 1 }
         })
 
-        // Recalculate if the slot is actually full
-        const totalBookings = await Booking.countDocuments({ slotId: slot._id });
-        if (totalBookings >= 5) {
+        
+        const totalBookings = await Booking.aggregate([
+            { $match: { slotId: slot._id } },
+            { $count: "totalBookings" }
+          ]);
+
+        totalBookings.length > 0 ? totalBookings[0].totalBookings : 0;
+        if (totalBookings.length >= 5) {
             await Slot.findByIdAndUpdate(slot._id, { isFull: true });
         } else {
-            // If not full, undo the temporary marking
             await Slot.findByIdAndUpdate(slot._id, { isFull: false });
         }
         return bookSlot
@@ -91,43 +95,43 @@ const booking = async ({ clientId, expertId, date, time }) => {
 
 
 
-const autoCancelNoShowBookings = async () => {
-    try {
-        const now = new Date();
-        console.log(now)
-        // Find all bookings where the grace period has passed
-        const expiredBookings = await Booking.find({
-            status: 'booked',
-            $expr: {
-                $lte: [
-                    '$createdAt',
-                    {
-                        $subtract: [now, { $multiply: ['$gracePeriod', 60 * 1000] }], // Grace period in milliseconds
-                    },
-                ],
-            },
-        });
+// const autoCancelNoShowBookings = async () => {
+//     try {
+//         const now = new Date();
+//         console.log(now)
+//         // Find all bookings where the grace period has passed
+//         const expiredBookings = await Booking.find({
+//             status: 'booked',
+//             $expr: {
+//                 $lte: [
+//                     '$createdAt',
+//                     {
+//                         $subtract: [now, { $multiply: ['$gracePeriod', 60 * 1000] }], // Grace period in milliseconds
+//                     },
+//                 ],
+//             },
+//         });
 
-        for (const booking of expiredBookings) {
-            // Mark the booking as 'cancelled'
-            booking.status = 'cancelled';
-            await booking.save();
+//         for (const booking of expiredBookings) {
+//             // Mark the booking as 'cancelled'
+//             booking.status = 'cancelled';
+//             await booking.save();
 
-            // Update the slot to make it available again
-            await Slot.findByIdAndUpdate(booking.slotId, {
-                $pull: { bookings: booking._id },
-                isFull: false,
-            });
+//             // Update the slot to make it available again
+//             await Slot.findByIdAndUpdate(booking.slotId, {
+//                 $pull: { bookings: booking._id },
+//                 isFull: false,
+//             });
 
-            console.log(`Booking ${booking._id} auto-cancelled.`);
-        }
-    } catch (error) {
-        console.error('Error in auto-cancelling bookings:', error);
-    }
-};
+//             console.log(`Booking ${booking._id} auto-cancelled.`);
+//         }
+//     } catch (error) {
+//         console.error('Error in auto-cancelling bookings:', error);
+//     }
+// };
 
 
-const recommendations = async ({ }) => {
+const recommendations = async () => {
     try {
         let slots
 
@@ -256,11 +260,9 @@ const handleNoShow = async (bookingId) => {
             return;
         }
 
-        // Mark the booking as 'no-show'
+
         booking.status = 'no-show';
         await booking.save();
-
-        // Update the associated slot to make it available again
         await Slot.findByIdAndUpdate(booking.slotId, {
             $pull: { bookings: booking._id },
             $inc: { bookedCount: -1 },
@@ -268,7 +270,11 @@ const handleNoShow = async (bookingId) => {
         });
 
         await Booking.findByIdAndDelete(bookingId)
-        console.log(`Booking ${bookingId} marked as no-show and slot updated.`);
+        return {
+            status: true,
+            message: "Booking status updated to 'no-show' ",
+            data: {}
+        }
     } catch (error) {
         console.error(`Error handling no-show for booking ${bookingId}:`, error);
     }
