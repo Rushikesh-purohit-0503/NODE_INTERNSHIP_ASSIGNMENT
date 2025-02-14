@@ -63,10 +63,10 @@ const createSlots = async ({
                 const endRecurringDateTime = new Date(
                     `${occurrenceDate.toISOString().split('T')[0]}T${endTime}`
                 );
-
+                // console.log(occurrenceDate.toISOString().split('T')[0],)
                 return {
                     expertId,
-                    date: occurrenceDate.toISOString().split('T')[0], 
+                    date: occurrenceDate.toISOString().split('T')[0],
                     isRecurring: recurring,
                     startTime: startRecurringDateTime,
                     endTime: endRecurringDateTime,
@@ -79,8 +79,8 @@ const createSlots = async ({
             const slotConflicts = await Slot.find({
                 expertId,
                 $or: recurringSlots.map((slot) => ({
-                    startTime: { $lt: slot.endTime },
-                    endTime: { $gt: slot.startTime },
+                    startTime: { $lt: endDateTime },
+                    endTime: { $gt: startDateTime },
                 })),
             });
 
@@ -110,7 +110,7 @@ const createSlots = async ({
             date,
             startTime: startDateTime,
             endTime: endDateTime,
-            slotDuration,
+            slotDuration, 
             maxBookings: slotSize,
         });
 
@@ -132,21 +132,20 @@ const createSlots = async ({
     }
 };
 
-
-
 const deleteSlots = async ({ expertId, startDate, endDate }) => {
     try {
+
+        const cacheKey = `availableSlots:${expertId.toString()}`;
         const result = await Slot.deleteMany({
             expertId,
             date: { $gte: startDate, $lte: endDate },
         });
-
+        await redis.del(cacheKey)
         return result;
     } catch (error) {
         console.error("Error while deleting slots", error)
     }
 };
-
 
 const getAllSlots = async ({ expertId }) => {
     try {
@@ -161,11 +160,11 @@ const getAllSlots = async ({ expertId }) => {
             const expert_id = new mongoose.Types.ObjectId(expertId).toString()
             const cacheKey = `availableSlots:${expert_id}`;
             let cachedAvailableSlots = await redis.get(cacheKey)
-            if (cachedAvailableSlots) {
+           
+            if (JSON.parse(cachedAvailableSlots).length) {
                 return {
                     status: true,
                     availableSlots: JSON.parse(cachedAvailableSlots),
-
                 }
             }
             slots.forEach(
@@ -194,11 +193,14 @@ const getAllSlots = async ({ expertId }) => {
             return {
                 status: true,
                 availableSlots: availableSlots,
-                bookedSlots: bookedSlots
+                bookedSlots: bookedSlots,
+
             }
-        } else return {
-            status: false,
-            message: "there are no slot created by you"
+        } else {
+            return {
+                status: false,
+                message: "there are no slot created by you"
+            }
         }
     } catch (error) {
         console.error("Error while getting all slots", error)
@@ -212,139 +214,146 @@ const updateRecurringSlots = async ({
     newStartTime,
     newEndTime,
     slotDuration,
-    recurringDays = [1, 2, 3, 4, 5] // Default to Mon-Fri 
+    recurringDays = [1, 2, 3, 4, 5],
 }) => {
     try {
-        // Validate inputs
-
-        if ((newStartTime || newEndTime) &&
-            new Date(`${startDate}T${newStartTime}`) >= new Date(`${startDate}T${newEndTime}`)) {
-            throw new Error("Invalid timing. Start time must be before end time.");
+        // Validate timing inputs
+        if (
+            (newStartTime || newEndTime) &&
+            new Date(`${startDate}T${newStartTime}`) >= new Date(`${startDate}T${newEndTime}`)
+        ) {
+            return {
+                status: false,
+                message: "Invalid timing. Start time must be before end time.",
+                data: {}
+            }
         }
 
-        // console.log("fdas",slotId)
-        // Validate slotId if provided
 
-
-
+        const newSartDateTime = (slot) => {
+            return new Date(`${slot.date.toISOString().split('T')[0]}T${newStartTime}`);
+        }
+        const newEndDateTime = (slot) => {
+            return new Date(`${slot.date.toISOString().split('T')[0]}T${newEndTime}`);
+        }
+        // Update a specific slot if slotId is provided
         if (slotId) {
-            // Update a single slot if slotId is provided
-            const slot = await Slot.findOne({ _id: new mongoose.Types.ObjectId(slotId), expertId: expertId });
+            const slot = await Slot.findOne({ _id: slotId, expertId });
 
             if (!slot) {
                 throw new Error("Slot not found.");
             }
 
-            // Validate that the slot is recurring
             if (!slot.isRecurring) {
-                throw new Error("The specified slot is not recurring.");
+                throw new Error("The specified slot is not a recurring slot.");
             }
 
             // Check for conflicts with other slots
             const conflict = await Slot.findOne({
                 expertId,
-                date: slot.date,
+                date: slot.date.toISOString().split('T')[0],
                 $or: [
                     { startTime: { $lt: newEndTime }, endTime: { $gt: newStartTime } },
                 ],
-                _id: { $ne: slotId }, // Exclude the current slot being updated
+                _id: { $ne: slotId }, // Exclude the current slot
             });
 
             if (conflict) {
                 throw new Error("Conflicts found with the updated schedule. Please adjust.");
             }
 
-            // Update the single slot
+            // Update the slot
             const updatedSlot = await Slot.findByIdAndUpdate(
                 slotId,
                 {
-                    ...(newStartTime && { startTime: newStartTime }),
-                    ...(newEndTime && { endTime: newEndTime }),
+                    ...(newStartTime && { startTime: newSartDateTime(slot) }),
+                    ...(newEndTime && { endTime: newEndDateTime(slot) }),
                     ...(slotDuration && { slotDuration }),
                 },
-                { new: true }
+                
             );
 
             return {
                 status: true,
                 message: "Slot updated successfully.",
-                data: { updatedSlot }
+                data: { updatedSlot },
             };
         }
 
-        // Fetch all recurring slots starting from the given date and matching the criteria
+        // Fetch all recurring slots starting from the given date
         const recurringSlots = await Slot.find({
             expertId,
             isRecurring: true,
             date: { $gte: startDate },
-        }).lean();
+        });
 
+        if (!recurringSlots.length) {
 
-        const filteredSlots = recurringSlots.filter((slot) => {
-            const dayOfWeek = new Date(slot.date).getDay();
-            return recurringDays.includes(dayOfWeek);
-        })
-
-        if (!filteredSlots.length) {
             return { status: false, message: "No recurring slots found.", data: {} };
         }
 
+        // Filter slots based on the specified recurring days
+        const filteredSlots = recurringSlots.filter((slot) =>
+            recurringDays.includes(new Date(slot.date.toISOString().split('T')[0]).getDay())
+        );
+        console.log(recurringDays)
+        if (!filteredSlots.length) {
+            return { status: false, message: "No matching recurring slots found.", data: {} };
+        }
+        console.log(filteredSlots)
         if (!newStartTime && !newEndTime && !slotDuration) {
-            // If no new timing or duration provided, delete recurring slots (skip them)
-            const recurringSlotIds = recurringSlots.map((slot) => slot._id)
-            await Slot.deleteMany({ _id: { $in: recurringSlotIds } });
-            return { message: "Recurring slots skipped successfully." };
+            // Delete recurring slots if no timing or duration is provided
+            await Slot.deleteMany({ _id: { $in: filteredSlots.map((slot) => slot._id) } });
+            return { status: true, message: "Recurring slots deleted successfully." };
         }
 
-        // Check for conflicts if updating slots
+        // Check for conflicts across the updated slots
+        const newStart = newStartTime ? new Date(`${startDate}T${newStartTime}:00Z`) : null;
+        const newEnd = newEndTime ? new Date(`${startDate}T${newEndTime}:00Z`) : null;
+        console.log(newStart)
         const conflict = await Slot.findOne({
             expertId,
-            date: { $in: recurringSlots.map((slot) => slot.date) },
+            date: { $in: filteredSlots.map((slot) => slot.date) },
             $or: [
-                { startTime: { $lt: newEndTime }, endTime: { $gt: newStartTime } },
-            ],
-            _id: { $nin: recurringSlots.map((slot) => slot._id) }, // Exclude current recurring slots
+                { startTime: { $lt: newStart }, endTime: { $gt: newEnd } },
+            ], 
+            _id: { $nin: filteredSlots.map((slot) => slot._id) }, // Exclude current slots
         });
 
         if (conflict) {
             throw new Error("Conflicts found with the updated schedule. Please adjust.");
         }
 
-
-        const updatePromises = filteredSlots.map((slot) =>
-            Slot.findOneAndUpdate(
-                { _id: slot._id },
-                {
-                    ...(newStartTime && { startTime: newStartTime }),
-                    ...(newEndTime && { endTime: newEndTime }),
-                    ...(slotDuration && { slotDuration }),
-                }
+        // Update filtered slots
+        const updatedSlots = await Promise.all(
+            filteredSlots.map((slot) =>
+                Slot.findByIdAndUpdate(
+                    slot._id,
+                    {
+                        ...(newStartTime && {
+                            startTime: newSartDateTime(slot),
+                        }),
+                        ...(newEndTime && {
+                            endTime: newEndDateTime(slot),
+                        }),
+                        ...(slotDuration && { slotDuration }),
+                    },
+                    
+                )
             )
-        );
-
-        const updatedSlots = await Promise.all(updatePromises)
-        const result = updatedSlots.map((slot) => [{
-            _id: slot._id,
-            expertId: slot.expertId,
-            date: slot.date,
-            startTime: slot.startTime,
-            endTime: slot.endTime,
-            slotDuration: slot.slotDuration,
-            maxBookings:slot.maxBookings,
-            
-        }])
+        ).then((result) => console.log(result)).catch((error)=>console.error("Error",error))
 
         return {
             status: true,
-            message: "The slots are updated succesfully",
-            data: { result }
-        }
+            message: "Recurring slots updated successfully.",
+            data: { updatedSlots },
+        };
     } catch (error) {
-        console.error("Error while calculating total bookings:", error);
-
-        throw new Error("Error while updating slots", error)
+        console.error("Error while updating recurring slots:", error);
+        throw new Error("Error while updating recurring slots: " + error);
     }
-}
+};
+
 
 module.exports = {
     getAllSlots,

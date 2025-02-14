@@ -1,4 +1,4 @@
-const { boolean } = require('joi');
+
 const mongoose = require('mongoose');
 
 const SlotSchema = new mongoose.Schema(

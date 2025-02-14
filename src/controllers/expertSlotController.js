@@ -85,8 +85,8 @@ const updateRecurringSlots = async (req, res) => {
             startDate: startDate,
             newStartTime: newStartTime,
             newEndTime: newEndTime,
-            slotDuration: slotDuration,
-            recurringDays: recurringDays || []
+            slotDuration: slotDuration, 
+            recurringDays: recurringDays 
         })
         if (result.status) return res.status(200).json(new ApiResponse(200, result, 'Successfully updated'))
         if (!result.status) return res.status(400).json(new ApiResponse(400, result.data, result.message))

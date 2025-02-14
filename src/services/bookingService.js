@@ -3,12 +3,23 @@ const Booking = require('../models/bookingModel')
 const { default: mongoose } = require('mongoose')
 const { redis, redisSubscriber } = require('../utils/Redis')
 
+const checkWeeklyLimit = async (clientId, expertId) => {
+    const startOfWeek = new Date();
+    startOfWeek.setHours(0, 0, 0, 0);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1);
+
+    return await Booking.countDocuments({ clientId, expertId, createdAt: { $gte: startOfWeek } });
+};
+
 const booking = async ({ clientId, expertId, date, time }) => {
     try {
 
         const weeklyBookings = await checkWeeklyLimit(clientId, expertId);
         if (weeklyBookings >= 3) {
-            return "You cannot book more than 3 slots with this expert in a week.";
+            return {
+                success: false,
+                message: "You cannot book more than 3 slots with this expert in a week."
+            }
         }
 
         const bookingDate = new Date(date);
@@ -66,7 +77,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
         const bookSlot = await Booking.create({
             expertId: expertId,
             clientId: clientId,
-            slotId: slot?._id,
+            slotId: slot._id,
 
         })
 
@@ -91,20 +102,13 @@ const booking = async ({ clientId, expertId, date, time }) => {
             message: "Booking created successfully.",
             data: bookSlot,
         };
-        
+
     } catch (error) {
         console.error("Error Booking slot", error)
     }
 }
-const checkWeeklyLimit = async (clientId, expertId) => {
-    const startOfWeek = new Date();
-    startOfWeek.setHours(0, 0, 0, 0);
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1);
 
-    return await Booking.countDocuments({ clientId, expertId, createdAt: { $gte: startOfWeek } });
-};
-
-
+const processbooking = async({})=>{}
 
 
 // const autoCancelNoShowBookings = async () => {
@@ -231,7 +235,8 @@ const getAllBookings = async ({ clientId }) => {
         const bookings = await Booking.find({ clientId: clientId }).select('-__v -createdAt -updatedAt')
         if (!bookings) return {
             status: false,
-            message: "No bookings associated with provided client-Id "
+            message: "No bookings associated with provided client-Id ",
+            data: {}
         }
         if (bookings) {
             const bookingsData = bookings.map((booking) => ({
@@ -243,7 +248,11 @@ const getAllBookings = async ({ clientId }) => {
                 gracePeriod: booking.gracePeriod
             }))
             await redis.setex(cacheKey, 1800, JSON.stringify(bookingsData));
-            return bookingsData;
+            return {
+                status: true,
+                message: "All bookings fetched",
+                data: bookingsData
+            }
         }
     } catch (error) {
         throw new Error("Error while getting client bookings", error)

@@ -60,11 +60,13 @@ const cancelBooking = async (req, res) => {
 const getAllBookingsForClient = async (req, res) => {
     try {
         let { id: clientId } = req.user._id
-        if(!clientId) return res.status(401).json(new ApiResponse(401,{},"Please login first"))
-        
-        const bookings = await bookingService.getAllBookings({clientId: new mongoose.Types.ObjectId(clientId)})
-        if(bookings) return res.status(200).json(new ApiResponse(200,bookings,"bookings fetched succesfully"))
-        
+        if (!clientId) return res.status(401).json(new ApiResponse(401, {}, "Please login first"))
+
+        const bookings = await bookingService.getAllBookings({ clientId: new mongoose.Types.ObjectId(clientId) })
+        if (!bookings.status) return res.status(400).json(new ApiResponse(400, bookings.data, "bookings fetched succesfully"))
+        return res.status(200).json(new ApiResponse(200, bookings.data, "bookings fetched succesfully"))
+
+
     } catch (error) {
         return res.status(500).json(new ApiResponse(500, error, "Error fetching bookings"))
     }

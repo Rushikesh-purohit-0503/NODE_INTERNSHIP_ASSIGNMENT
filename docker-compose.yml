@@ -8,3 +8,13 @@ services:
       - "6379:6379"
       - "8001:8001"
     restart: always
+    # Use root/example as user/password credentials
+  mongo:
+    image: mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    ports:
+      - 27017:27017
+

@@ -13,14 +13,14 @@ const getTotalBookingsPerExpert = async () => {
             },
             {
                 $lookup: {
-                    from: "users", 
+                    from: "users",
                     localField: "_id",
                     foreignField: "_id",
                     as: "expertDetails"
                 }
             },
             {
-                $unwind: "$expertDetails" 
+                $unwind: "$expertDetails"
             },
             {
                 $project: {
@@ -33,7 +33,7 @@ const getTotalBookingsPerExpert = async () => {
             }
 
         ])
-        
+
 
         if (allBookings) {
             return {
@@ -59,60 +59,59 @@ const getTotalBookingsPerExpert = async () => {
     }
 }
 
-// const getUtilizationRate = async ({ expertId, startDate, endDate }) => {
-//     try {
-        
-//         const totalSlots = await Slot.countDocuments({
-//             expertId,
-//             date: { $gte: new Date(startDate), $lte: new Date(endDate) },
-//             isBlocked: false
-//         });
+const getUtilizationRate = async ({ expertId, startDate, endDate }) => {
+    try {
 
-       
-//         const bookedSlots = await Slot.aggregate([
-//             {
-//                 $match: {
-//                     expertId: new mongoose.Types.ObjectId(expertId),
-//                     date: { $gte: new Date(startDate), $lte: new Date(endDate) },
-//                     isBlocked: false
-//                 }
-//             },
-//             {
-//                 $project: {
-//                     bookedCount: { $size: "$bookings" }
-//                 }
-//             },
-//             {
-//                 $group: {
-//                     _id: null,
-//                     totalBookedSlots: { $sum: "$bookedCount" }
-//                 }
-//             }
-//         ]);
+        const totalSlots = await Slot.countDocuments({
+            expertId,
+            date: { $gte: new Date(startDate), $lte: new Date(endDate) },
+            isBlocked: false
+        });
 
-//         const totalBookedSlots = bookedSlots[0]?.totalBookedSlots || 0;
-//         const utilizationRate = totalSlots
-//             ? ((totalBookedSlots / totalSlots) * 100).toFixed(2)
-//             : 0;
 
-//         return {
-//             status: true,
-//             message: "Utilization rate calculated successfully",
-//             data: {
-//                 totalSlots,
-//                 totalBookedSlots,
-//                 utilizationRate: `${utilizationRate}%`
-//             }
-//         };
-//     } catch (error) {
-//         console.error("Error while calculating utilization rate:", error);
-//         return {
-//             status: false,
-//             message: "Error occurred while calculating utilization rate",
-//             error: error.message
-//         };
-//     }
-// };
+        const bookedSlots = await Slot.aggregate([
+            {
+                $match: {
+                    bookedCount: { $gte: 1 },
+                    isBlocked: false
+                }
+            },
+            {
+                $project: {
+                    bookedCount: { $size: "$bookings" }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalBookedSlots: { $sum: "$bookedCount" }
+                }
+            }
+        ]);
+
+        const totalBookedSlots = bookedSlots[0]?.totalBookedSlots || 0;
+        const utilizationRate = totalSlots
+            ? ((totalBookedSlots / totalSlots) * 100).toFixed(2)
+            : 0;
+
+        return {
+            status: true,
+            message: "Utilization rate calculated successfully",
+            data: {
+                totalSlots,
+                totalBookedSlots,
+                utilizationRate: `${utilizationRate}%`
+            }
+        };
+    } catch (error) {
+        console.error("Error while calculating utilization rate:", error);
+        return {
+            status: false,
+            message: "Error occurred while calculating utilization rate",
+            error: error.message
+        };
+    }
+};
 // const getNoShowStatistics = async ({ startDate, endDate }) => {
 //     try {
 //         const noShowStats = await Booking.aggregate([
@@ -148,6 +147,6 @@ const getTotalBookingsPerExpert = async () => {
 
 module.exports = {
     // getNoShowStatistics,
-    // getUtilizationRate,
+    getUtilizationRate,
     getTotalBookingsPerExpert
 }
