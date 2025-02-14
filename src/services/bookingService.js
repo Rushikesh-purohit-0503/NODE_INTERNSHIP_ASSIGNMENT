@@ -6,17 +6,7 @@ const { redis, redisSubscriber } = require('../utils/Redis')
 const booking = async ({ clientId, expertId, date, time }) => {
     try {
 
-        const startOfWeek = new Date();
-        startOfWeek.setHours(0, 0, 0, 0);
-        startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1); // Start of the week (Monday)
-
-        // Check existing bookings for the same client and expert this week
-        const weeklyBookings = await Booking.countDocuments({
-            clientId,
-            expertId,
-            createdAt: { $gte: startOfWeek },
-        });
-
+        const weeklyBookings = await checkWeeklyLimit(clientId, expertId);
         if (weeklyBookings >= 3) {
             return "You cannot book more than 3 slots with this expert in a week.";
         }
@@ -35,15 +25,28 @@ const booking = async ({ clientId, expertId, date, time }) => {
                 isBlocked: false,
                 isFull: false,
             },
-            {
-                $set: { isFull: true } // Temporarily marked as full to prevent race conditions
-            },
+            // {
+            //     $set: { isFull: true } // Temporarily marked as full to prevent race conditions
+            // },
             {
                 new: true
             }
         );
         if (!slot) {
-            return "Slot does not exist.";
+            return {
+                success: false,
+                message: "Slot does not exist.",
+            };
+        }
+        const totalBookings = await Booking.countDocuments({ slotId: slot._id });
+
+        if (totalBookings >= slot.totalCapacity) {
+            // If total bookings reach slot capacity, mark the slot as full
+            await Slot.findByIdAndUpdate(slot._id, { isFull: true });
+            return {
+                success: false,
+                message: "This slot is fully booked. Please choose another slot.",
+            };
         }
         const existingBooking = await Booking.findOne({
             clientId: clientId,
@@ -52,7 +55,10 @@ const booking = async ({ clientId, expertId, date, time }) => {
 
         if (existingBooking) {
             await Slot.findByIdAndUpdate(slot._id, { isFull: false });
-            return "You have already booked this slot.";
+            return {
+                success: false,
+                message: "You have already booked this slot.",
+            };
         }
 
 
@@ -64,33 +70,39 @@ const booking = async ({ clientId, expertId, date, time }) => {
 
         })
 
-        const ttl = bookSlot.gracePeriod * 60; 
-        const redisKey = `booking:noshow:${bookSlot._id}`
-        await redis.setex(redisKey, ttl, JSON.stringify({ bookingId: bookSlot._id }));
+        // const ttl = bookSlot.gracePeriod * 60; 
+        // const redisKey = `booking:noshow:${bookSlot._id}`
+        // await redis.setex(redisKey, ttl, JSON.stringify({ bookingId: bookSlot._id }));
 
-        
-        await Slot.findByIdAndUpdate(slot._id, {
+
+        const updatedSlot = await Slot.findByIdAndUpdate(slot._id, {
             $push: { bookings: bookSlot._id },
             $inc: { bookedCount: 1 }
-        })
+        }, { new: true })
 
-        
-        const totalBookings = await Booking.aggregate([
-            { $match: { slotId: slot._id } },
-            { $count: "totalBookings" }
-          ]);
 
-        totalBookings.length > 0 ? totalBookings[0].totalBookings : 0;
-        if (totalBookings.length >= 5) {
+        // Only mark the slot as full if the total bookings now equal the total capacity
+        if (updatedSlot.bookedCount >= updatedSlot.maxBookings) {
             await Slot.findByIdAndUpdate(slot._id, { isFull: true });
-        } else {
-            await Slot.findByIdAndUpdate(slot._id, { isFull: false });
         }
-        return bookSlot
+
+        return {
+            success: true,
+            message: "Booking created successfully.",
+            data: bookSlot,
+        };
+        
     } catch (error) {
         console.error("Error Booking slot", error)
     }
 }
+const checkWeeklyLimit = async (clientId, expertId) => {
+    const startOfWeek = new Date();
+    startOfWeek.setHours(0, 0, 0, 0);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay() + 1);
+
+    return await Booking.countDocuments({ clientId, expertId, createdAt: { $gte: startOfWeek } });
+};
 
 
 
@@ -252,7 +264,7 @@ const getAllBookings = async ({ clientId }) => {
 
 const handleNoShow = async (bookingId) => {
     try {
-        
+
         const booking = await Booking.findById(new mongoose.Types.ObjectId(bookingId));
 
         if (!booking || booking.status !== 'booked') {

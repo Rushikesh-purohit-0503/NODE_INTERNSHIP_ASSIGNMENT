@@ -6,10 +6,10 @@ redis.on("connect", () => {
 });
 redis.on('error', (err) => console.error('Redis Error:', err));
 
-const redisSubscriber = new Redis()
+// const redisSubscriber = new Redis()
 
-redisSubscriber.config('SET', 'notify-keyspace-events', 'Ex'); // Ensure notifications are enabled
-redisSubscriber.subscribe('__keyevent@0__:expired'); // Subscribe to expiration events
+// redisSubscriber.config('SET', 'notify-keyspace-events', 'Ex'); // Ensure notifications are enabled
+// redisSubscriber.subscribe('__keyevent@0__:expired'); // Subscribe to expiration events
 
 
-module.exports = { redis, redisSubscriber }
+module.exports = { redis }

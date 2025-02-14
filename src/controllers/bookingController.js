@@ -21,9 +21,9 @@ const bookSlot = async (req, res,) => {
             time: time
         })
         // console.log(typeof booking)
-        if (!booking || typeof booking !== 'object') return res.status(400).json(new ApiResponse(400, booking, "booking not done"))
+        if (!booking.success) return res.status(400).json(new ApiResponse(400, booking, "booking not done"))
 
-        return res.status(201).json(new ApiResponse(200, booking, "Slot booked successfully"))
+        return res.status(201).json(new ApiResponse(200, booking.data, booking.message))
     } catch (error) {
         console.error(error)
         throw new ApiError('500', "error booking slot", error.message)
@@ -32,7 +32,7 @@ const bookSlot = async (req, res,) => {
 
 const Recommendations = async (req, res) => {
     try {
-        const recommended = await bookingService.recommendations({})
+        const recommended = await bookingService.recommendations()
         if (!recommended || typeof recommended !== 'object') return res.status(404).json(new ApiResponse(404, recommended, "No slots available in near future"))
         return res.status(200).json(new ApiResponse(200, { recommendedSlots: recommended }, "This are the slots available for near future."))
     } catch (error) {
