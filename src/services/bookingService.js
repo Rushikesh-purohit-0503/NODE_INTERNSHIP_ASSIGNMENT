@@ -165,19 +165,19 @@ const checkBookingStatus = async (booking) => {
         if (checkInExpired) {
             booking.status = 'no-show';
             await booking.save();
-            const slot = await Slot.findById(booking?.slotId);
+            // const slot = await Slot.findById(booking?.slotId);
 
-            if (slot && slot.bookings) {
+            // if (slot && slot.bookings) {
 
-                slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
-                slot.bookedCount = slot.bookedCount - 1
-                if (slot.isFull) {
-                    slot.isFull = false
-                }
-                await slot.save();
-            }
-            // Optionally, delete the booking after no-show
-            await Booking.deleteOne({ _id: booking._id }); // Corrected deletion method
+            //     slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
+            //     slot.bookedCount = slot.bookedCount - 1
+            //     if (slot.isFull) {
+            //         slot.isFull = false
+            //     }
+            //     await slot.save();
+            // }
+            // // Optionally, delete the booking after no-show
+            // await Booking.deleteOne({ _id: booking._id }); // Corrected deletion method
         }
     } catch (error) {
         console.error(error)
@@ -202,10 +202,38 @@ const checkExpiredBookings = async () => {
 };
 
 
+const autoCancelation = async (booking) => {
+    try {
+        const now = new Date()
+        const gracePeriodEnd = new Date(booking.createdAt.getTime() + booking.gracePeriod * 60000);
+        const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
+        if (checkInExpired) {
+            booking.status = 'cancelled  ';
+            await booking.save();
+        }
+    } catch (error) {
+        console.error(error)
+    }
+}
+const checkAutoCancelation = async () => {
+    try {
+        const no_ShowBookings = await Booking.find({
+            status: 'no-show',
+            checkInTime: { $eq: null },
+            updatedAt: { $lte: new Date(new Date().getTime() - 1 * 60000) },
+        });
+        console.log(no_ShowBookings)
+        no_ShowBookings.forEach(async (booking) => {
+            await autoCancelation(booking)
+        })
+    } catch (error) {
+        console.error(error)
+    }
+}
 
-const backgroundJob = () => {
+const backgroundJobs = () => {
     setInterval(checkExpiredBookings, 60 * 1000);
-
+    setInterval(checkAutoCancelation, 60 * 1000)
 }
 
 
@@ -336,5 +364,5 @@ module.exports = {
     cancel_delete_Booking,
     getAllBookings,
     checkedInClient,
-    backgroundJob
+    backgroundJobs
 }

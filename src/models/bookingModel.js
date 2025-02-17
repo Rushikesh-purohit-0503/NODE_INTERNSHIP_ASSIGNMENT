@@ -19,7 +19,7 @@ const BookingSchema = new mongoose.Schema(
         },
         status: {
             type: String,
-            enum: ['booked', 'attended', 'no-show'],
+            enum: ['booked', 'attended', 'no-show', 'cancelled'],
             default: 'booked'
         },
         gracePeriod:{
