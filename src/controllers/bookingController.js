@@ -50,7 +50,7 @@ const cancelBooking = async (req, res) => {
 
         const canceled = await bookingService.cancel_delete_Booking({ bookingId: new mongoose.Types.ObjectId(bookingId), clientId: new mongoose.Types.ObjectId(clientId) })
 
-        if (canceled.success) return res.status(200).json(new ApiResponse(200, canceled, canceled.message))
+        if (canceled.status) return res.status(200).json(new ApiResponse(200, canceled, canceled.message))
         else return res.status(400).json(new ApiResponse(400, canceled, canceled.message))
     } catch (error) {
         return res.status(500).json(new ApiResponse(500, error, error.message))

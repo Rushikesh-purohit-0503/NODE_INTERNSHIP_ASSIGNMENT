@@ -2,7 +2,7 @@ const Slot = require('../models/expertSlotModel')
 const Booking = require('../models/bookingModel')
 const { default: mongoose } = require('mongoose')
 const { redis, bookingQueue } = require('../utils/Redis')
-
+const cron = require('node-cron')
 const checkWeeklyLimit = async (clientId, expertId) => {
     const startOfWeek = new Date();
     startOfWeek.setHours(0, 0, 0, 0);
@@ -192,7 +192,7 @@ const checkExpiredBookings = async () => {
             checkInTime: { $eq: null },
             createdAt: { $lte: new Date(new Date().getTime() - 15 * 60000) },
         });
-        console.log(expiredBookings)
+        console.log("expiredBookings",expiredBookings)
         expiredBookings.forEach(async (booking) => {
             await checkBookingStatus(booking);
         });
@@ -205,24 +205,25 @@ const checkExpiredBookings = async () => {
 const autoCancelation = async (booking) => {
     try {
         const now = new Date()
-        const gracePeriodEnd = new Date(booking.createdAt.getTime() + booking.gracePeriod * 60000);
+        const gracePeriodEnd = new Date(booking.updatedAt.getTime() + booking.gracePeriod * 60000);
         const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
         if (checkInExpired) {
-            booking.status = 'cancelled  ';
+            booking.status = 'cancelled';
             await booking.save();
         }
     } catch (error) {
         console.error(error)
     }
 }
+
 const checkAutoCancelation = async () => {
     try {
         const no_ShowBookings = await Booking.find({
             status: 'no-show',
             checkInTime: { $eq: null },
-            updatedAt: { $lte: new Date(new Date().getTime() - 1 * 60000) },
+            updatedAt: { $lte: new Date(new Date().getTime() - 15 * 60000) },
         });
-        console.log(no_ShowBookings)
+        console.log("noshow bookings",no_ShowBookings)
         no_ShowBookings.forEach(async (booking) => {
             await autoCancelation(booking)
         })
@@ -231,12 +232,10 @@ const checkAutoCancelation = async () => {
     }
 }
 
-const backgroundJobs = () => {
-    setInterval(checkExpiredBookings, 60 * 1000);
-    setInterval(checkAutoCancelation, 60 * 1000)
-}
-
-
+cron.schedule('* * * * *', () => {
+    checkAutoCancelation()
+    checkExpiredBookings()
+});
 
 
 // Todo : recommandation => from current date to next day.
@@ -280,13 +279,13 @@ const cancel_delete_Booking = async ({ clientId, bookingId }) => {
 
         const booking = await Booking.findById(bookingId)
         if (!booking) return {
-            success: false,
+            status: false,
             message: "Booking not found",
         };
 
         if (booking.clientId.toString() !== clientId.toString()) {
             return {
-                success: false,
+                status: false,
                 message: "Unauthorized: You do not have permission to cancel this booking.",
             };
         }
@@ -294,7 +293,7 @@ const cancel_delete_Booking = async ({ clientId, bookingId }) => {
 
 
         if (!slot) return {
-            success: false,
+            status: false,
             message: "The slot associated with this booking was not found."
         }
 
@@ -306,8 +305,8 @@ const cancel_delete_Booking = async ({ clientId, bookingId }) => {
         await Booking.findByIdAndDelete(bookingId)
 
         return {
-            success: true,
-            message: "Booking canceled successfully."
+            status: true,
+            message: "Booking canceled succcessfully."
         }
     } catch (error) {
         throw new Error(error)
@@ -364,5 +363,5 @@ module.exports = {
     cancel_delete_Booking,
     getAllBookings,
     checkedInClient,
-    backgroundJobs
+
 }
