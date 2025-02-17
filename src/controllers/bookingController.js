@@ -21,7 +21,7 @@ const bookSlot = async (req, res,) => {
             time: time
         })
         // console.log(typeof booking)
-        if (!booking.success) return res.status(400).json(new ApiResponse(400, booking, "booking not done"))
+        if (!booking.status) return res.status(400).json(new ApiResponse(400, booking, "booking not done"))
 
         return res.status(201).json(new ApiResponse(200, booking.data, booking.message))
     } catch (error) {
@@ -48,7 +48,7 @@ const cancelBooking = async (req, res) => {
         console.log(clientId)
         if (!bookingId) return res.status(400).json(new ApiResponse(400, {}, "No bookingId provided"))
 
-        const canceled = await bookingService.cancelBooking({ bookingId: new mongoose.Types.ObjectId(bookingId), clientId: new mongoose.Types.ObjectId(clientId) })
+        const canceled = await bookingService.cancel_delete_Booking({ bookingId: new mongoose.Types.ObjectId(bookingId), clientId: new mongoose.Types.ObjectId(clientId) })
 
         if (canceled.success) return res.status(200).json(new ApiResponse(200, canceled, canceled.message))
         else return res.status(400).json(new ApiResponse(400, canceled, canceled.message))
@@ -63,7 +63,7 @@ const getAllBookingsForClient = async (req, res) => {
         if (!clientId) return res.status(401).json(new ApiResponse(401, {}, "Please login first"))
 
         const bookings = await bookingService.getAllBookings({ clientId: new mongoose.Types.ObjectId(clientId) })
-        if (!bookings.status) return res.status(400).json(new ApiResponse(400, bookings.data, "bookings fetched succesfully"))
+        if (!bookings.status) return res.status(400).json(new ApiResponse(400, {}, bookings.message))
         return res.status(200).json(new ApiResponse(200, bookings.data, "bookings fetched succesfully"))
 
 
@@ -71,9 +71,27 @@ const getAllBookingsForClient = async (req, res) => {
         return res.status(500).json(new ApiResponse(500, error, "Error fetching bookings"))
     }
 }
+
+const checkedInClient = async (req, res) => {
+    try {
+        let { bookingId } = req.body
+        let { clientId } = req.user?._id
+
+        const result = await bookingService.checkedInClient({ clientId: clientId, bookingId: new mongoose.Types.ObjectId(bookingId) })
+        if (!result.status) {
+            return res.status(400).json(new ApiResponse(400, result.data, result.message))
+        }
+        return res.status(200).json(new ApiResponse(200, result.data, result.message))
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json(new ApiResponse(500, error, "Error checked in client"))
+    }
+}
+
 module.exports = {
     bookSlot,
     Recommendations,
     cancelBooking,
-    getAllBookingsForClient
+    getAllBookingsForClient,
+    checkedInClient
 }

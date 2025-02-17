@@ -9,7 +9,7 @@ const { USER_ROLES_ENUM } = require('../../constants/user_constants')
 router.route('/analytics/usage')
     .get(Authentication,
         verifyUserRoles(USER_ROLES_ENUM.ADMIN),
-        analyticsController.getTotalBookingsPerExpert)
+        analyticsController.getAnalytics)
 
 
 module.exports = router

@@ -1,7 +1,7 @@
 const Slot = require('../models/expertSlotModel')
 const Booking = require('../models/bookingModel')
 const { default: mongoose } = require('mongoose')
-const { redis, redisSubscriber } = require('../utils/Redis')
+const { redis, bookingQueue } = require('../utils/Redis')
 
 const checkWeeklyLimit = async (clientId, expertId) => {
     const startOfWeek = new Date();
@@ -11,13 +11,16 @@ const checkWeeklyLimit = async (clientId, expertId) => {
     return await Booking.countDocuments({ clientId, expertId, createdAt: { $gte: startOfWeek } });
 };
 
+
+
+
 const booking = async ({ clientId, expertId, date, time }) => {
     try {
 
         const weeklyBookings = await checkWeeklyLimit(clientId, expertId);
         if (weeklyBookings >= 3) {
             return {
-                success: false,
+                status: false,
                 message: "You cannot book more than 3 slots with this expert in a week."
             }
         }
@@ -26,13 +29,17 @@ const booking = async ({ clientId, expertId, date, time }) => {
         const dayOfWeek = bookingDate.getDay(); // 0 = Sunday, 6 = Saturday
 
         if (dayOfWeek === 0 || dayOfWeek === 6) {
-            return 'Bookings are not allowed on weekends (Saturday and Sunday).'
+            return {
+                status: false,
+                message: "Bookings are not allowed on weekends (Saturday and Sunday)."
+            }
         }
+
         const slot = await Slot.findOneAndUpdate(
             {
                 expertId: new mongoose.Types.ObjectId(expertId),
-                date: date,
-                startTime: time,
+                date: new Date(date),
+                startTime: new Date(`${date}T${time}`),
                 isBlocked: false,
                 isFull: false,
             },
@@ -45,7 +52,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
         );
         if (!slot) {
             return {
-                success: false,
+                status: false,
                 message: "Slot does not exist.",
             };
         }
@@ -55,7 +62,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
             // If total bookings reach slot capacity, mark the slot as full
             await Slot.findByIdAndUpdate(slot._id, { isFull: true });
             return {
-                success: false,
+                status: false,
                 message: "This slot is fully booked. Please choose another slot.",
             };
         }
@@ -67,10 +74,11 @@ const booking = async ({ clientId, expertId, date, time }) => {
         if (existingBooking) {
             await Slot.findByIdAndUpdate(slot._id, { isFull: false });
             return {
-                success: false,
+                status: false,
                 message: "You have already booked this slot.",
             };
         }
+
 
 
 
@@ -98,7 +106,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
         }
 
         return {
-            success: true,
+            status: true,
             message: "Booking created successfully.",
             data: bookSlot,
         };
@@ -108,45 +116,100 @@ const booking = async ({ clientId, expertId, date, time }) => {
     }
 }
 
-const processbooking = async({})=>{}
+const checkedInClient = async ({ clientId, bookingId }) => {
+    try {
+        const booking = await Booking.findById(new mongoose.Types.ObjectId(bookingId))
+        if (!booking) {
+            return {
+                status: false,
+                message: "no booking found",
+                data: {}
+            }
+        }
+        if (booking.status === "attended") {
+            return {
+                status: false,
+                message: "You have already checked-in",
+                data: {}
+            }
+        }
+        if (booking.status === 'no-show') {
+            return {
+                status: false,
+                message: "The booking already marked as no-show",
+                data: {}
+            }
+        }
+        booking.checkInTime = new Date()
+        booking.status = "attended"
+        await booking.save();
+
+        return {
+            status: true,
+            message: "Client succecfully checked-in",
+            data: { booking }
+        }
+    } catch (error) {
+        // console.error("Error checking in Client :", error);
+        throw new Error("Error checking in client: " + error);
+    }
+}
 
 
-// const autoCancelNoShowBookings = async () => {
-//     try {
-//         const now = new Date();
-//         console.log(now)
-//         // Find all bookings where the grace period has passed
-//         const expiredBookings = await Booking.find({
-//             status: 'booked',
-//             $expr: {
-//                 $lte: [
-//                     '$createdAt',
-//                     {
-//                         $subtract: [now, { $multiply: ['$gracePeriod', 60 * 1000] }], // Grace period in milliseconds
-//                     },
-//                 ],
-//             },
-//         });
+const checkBookingStatus = async (booking) => {
+    try {
+        const now = new Date();
+        const gracePeriodEnd = new Date(booking.createdAt.getTime() + booking.gracePeriod * 60000);
+        const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
 
-//         for (const booking of expiredBookings) {
-//             // Mark the booking as 'cancelled'
-//             booking.status = 'cancelled';
-//             await booking.save();
+        if (checkInExpired) {
+            booking.status = 'no-show';
+            await booking.save();
+            const slot = await Slot.findById(booking?.slotId);
 
-//             // Update the slot to make it available again
-//             await Slot.findByIdAndUpdate(booking.slotId, {
-//                 $pull: { bookings: booking._id },
-//                 isFull: false,
-//             });
+            if (slot && slot.bookings) {
 
-//             console.log(`Booking ${booking._id} auto-cancelled.`);
-//         }
-//     } catch (error) {
-//         console.error('Error in auto-cancelling bookings:', error);
-//     }
-// };
+                slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
+                slot.bookedCount = slot.bookedCount - 1
+                if(slot.isFull){
+                    slot.isFull = false
+                }
+                await slot.save();
+            }
+            // Optionally, delete the booking after no-show
+            await Booking.deleteOne({ _id: booking._id }); // Corrected deletion method
+        }
+    } catch (error) {
+        console.error(error)
+    }
+};
 
 
+const checkExpiredBookings = async () => {
+    try {
+        const expiredBookings = await Booking.find({
+            status: 'booked',
+            checkInTime: { $eq: null },
+            createdAt: { $lte: new Date(new Date().getTime() - 15 * 60000) },
+        });
+        console.log(expiredBookings)
+        expiredBookings.forEach(async (booking) => {
+            await checkBookingStatus(booking);
+        });
+    } catch (error) {
+        console.error(error)
+    }
+};
+
+
+
+
+setInterval(checkExpiredBookings, 60 * 1000);
+
+
+
+
+// Todo : recommandation => from current date to next day.
 const recommendations = async () => {
     try {
         let slots
@@ -162,18 +225,17 @@ const recommendations = async () => {
             .sort({ bookedCount: -1 }) // Sort by popularity (most booked)
             .select('-bookings -__v -createdAt -updatedAt')
             .lean();
-        console.log("fourth")
 
         if (!slots) {
             return "No slots available for the selected date."
         }
         const availableSlots = slots.filter((slot) => slot.bookedCount < slot.maxBookings)
         if (!availableSlots.length) {
-            return "All slots are fully booked for this date."
+            return "All slots are fully booked"
         }
         const sortedSlots = availableSlots.sort((a, b) => b.bookedCount - a.bookedCount);
 
-        // Step 4: Return top 3 recommended slots
+
         const recommendations = sortedSlots.slice(0, 3);
 
         await redis.setex(cacheKey, 3600, JSON.stringify(recommendations));
@@ -183,7 +245,7 @@ const recommendations = async () => {
     }
 }
 
-const cancelBooking = async ({ clientId, bookingId }) => {
+const cancel_delete_Booking = async ({ clientId, bookingId }) => {
     try {
 
         const booking = await Booking.findById(bookingId)
@@ -225,12 +287,16 @@ const cancelBooking = async ({ clientId, bookingId }) => {
 
 const getAllBookings = async ({ clientId }) => {
     try {
-
+        console.log(new Date(new Date().getTime()))
         const cacheKey = `clientBookings:${clientId.toString()}`;
         const cachedBookings = await redis.get(cacheKey);
 
         if (cachedBookings) {
-            return JSON.parse(cachedBookings);
+            return {
+                status: true,
+                message: "All bookings fetched",
+                data: JSON.parse(cachedBookings)
+            }
         }
         const bookings = await Booking.find({ clientId: clientId }).select('-__v -createdAt -updatedAt')
         if (!bookings) return {
@@ -245,7 +311,8 @@ const getAllBookings = async ({ clientId }) => {
                 expertId: booking.expertId,
                 slotId: booking.slotId,
                 status: booking.status,
-                gracePeriod: booking.gracePeriod
+                gracePeriod: booking.gracePeriod,
+                checkInTime: booking.checkInTime
             }))
             await redis.setex(cacheKey, 1800, JSON.stringify(bookingsData));
             return {
@@ -260,49 +327,12 @@ const getAllBookings = async ({ clientId }) => {
 }
 
 
-// redisSubscriber.on('message', async ( channel, key) => {
-//     if (!expiredKey || typeof expiredKey !== 'string') {
-//         console.error("Expired key is invalid:", expiredKey);
-//         return;
-//     }
-//     if (key.startsWith('booking:noshow:')) {
-//         const bookingId = key.split(':')[2]; // Extract the booking ID from the Redis key
-//         await handleNoShow(bookingId);
-//     }
-// });
 
-const handleNoShow = async (bookingId) => {
-    try {
-
-        const booking = await Booking.findById(new mongoose.Types.ObjectId(bookingId));
-
-        if (!booking || booking.status !== 'booked') {
-            console.log(`Booking ${bookingId} is not eligible for no-show processing.`);
-            return;
-        }
-
-
-        booking.status = 'no-show';
-        await booking.save();
-        await Slot.findByIdAndUpdate(booking.slotId, {
-            $pull: { bookings: booking._id },
-            $inc: { bookedCount: -1 },
-            isFull: false,
-        });
-
-        await Booking.findByIdAndDelete(bookingId)
-        return {
-            status: true,
-            message: "Booking status updated to 'no-show' ",
-            data: {}
-        }
-    } catch (error) {
-        console.error(`Error handling no-show for booking ${bookingId}:`, error);
-    }
-};
 module.exports = {
     booking,
     recommendations,
-    cancelBooking,
-    getAllBookings
+    cancel_delete_Booking,
+    getAllBookings,
+    checkedInClient,
+    
 }

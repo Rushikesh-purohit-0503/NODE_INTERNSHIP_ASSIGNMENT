@@ -27,4 +27,11 @@ router.route('/')
     .get(Authantication,
         verifyRoles(USER_ROLES_ENUM.CLIENT),
         bookingController.getAllBookingsForClient)
+
+router.route('/check-in')
+    .put(Authantication,
+        verifyRoles(USER_ROLES_ENUM.CLIENT),
+        bookingController.checkedInClient)
+
+
 module.exports = router
