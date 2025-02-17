@@ -171,7 +171,7 @@ const checkBookingStatus = async (booking) => {
 
                 slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
                 slot.bookedCount = slot.bookedCount - 1
-                if(slot.isFull){
+                if (slot.isFull) {
                     slot.isFull = false
                 }
                 await slot.save();
@@ -203,8 +203,10 @@ const checkExpiredBookings = async () => {
 
 
 
+const backgroundJob = () => {
+    setInterval(checkExpiredBookings, 60 * 1000);
 
-setInterval(checkExpiredBookings, 60 * 1000);
+}
 
 
 
@@ -334,5 +336,5 @@ module.exports = {
     cancel_delete_Booking,
     getAllBookings,
     checkedInClient,
-    
+    backgroundJob
 }

@@ -8,6 +8,7 @@ const morgan = require('morgan')
 const route = require('./routers/index.js')
 const bodyParser =require('body-parser')
 const errorHandler = require('./middleware/errorHandler.js')
+const { backgroundJob } = require('./services/bookingService.js')
 
 
 app.use(cookieParser())
@@ -27,7 +28,7 @@ app.use(morgan(morganFormat, {
         },
     }
 }));
-
+backgroundJob()
 app.use(express.json())
 app.use('/api', route)
 
