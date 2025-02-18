@@ -4,5 +4,5 @@ const USER_ROLES_ENUM = {
     EXPERT: 2,
     CLIENT: 3
 }
-
-module.exports = { USER_ROLES_ENUM }
+const MAX_CONCURRENT_BOOKINGS = 5;
+module.exports = { USER_ROLES_ENUM, MAX_CONCURRENT_BOOKINGS }

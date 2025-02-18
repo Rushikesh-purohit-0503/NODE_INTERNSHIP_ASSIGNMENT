@@ -1,7 +1,8 @@
 const Slot = require('../models/expertSlotModel')
 const Booking = require('../models/bookingModel')
 const { default: mongoose } = require('mongoose')
-const { redis, bookingQueue } = require('../utils/Redis')
+const { redis } = require('../utils/Redis')
+const { MAX_CONCURRENT_BOOKINGS } = require('../constants/user_constants')
 const cron = require('node-cron')
 const checkWeeklyLimit = async (clientId, expertId) => {
     const startOfWeek = new Date();
@@ -10,9 +11,6 @@ const checkWeeklyLimit = async (clientId, expertId) => {
 
     return await Booking.countDocuments({ clientId, expertId, createdAt: { $gte: startOfWeek } });
 };
-
-
-
 
 const booking = async ({ clientId, expertId, date, time }) => {
     try {
@@ -34,7 +32,25 @@ const booking = async ({ clientId, expertId, date, time }) => {
                 message: "Bookings are not allowed on weekends (Saturday and Sunday)."
             }
         }
+        
+        const taskId = `${clientId}-${expertId}-${date}-${time}`;  
+        const queueKey = `expert:${expertId}:queue`;
 
+       
+        await redis.lpush(queueKey, taskId);
+
+        
+        const currentConcurrency = await redis.get(`expert:${expertId}:concurrency`);
+        if (currentConcurrency >= MAX_CONCURRENT_BOOKINGS) {
+           
+            return {
+                status: false,
+                message: "Too many bookings are being processed for this expert. Please try again later."
+            };
+        }
+
+        
+        await redis.incr(`expert:${expertId}:concurrency`);
         const slot = await Slot.findOneAndUpdate(
             {
                 expertId: new mongoose.Types.ObjectId(expertId),
@@ -104,7 +120,8 @@ const booking = async ({ clientId, expertId, date, time }) => {
         if (updatedSlot.bookedCount >= updatedSlot.maxBookings) {
             await Slot.findByIdAndUpdate(slot._id, { isFull: true });
         }
-
+        await redis.decr(`expert:${expertId}:concurrency`);
+        await redis.decr(`expert:${expertId}:concurrency`);
         return {
             status: true,
             message: "Booking created successfully.",
@@ -155,7 +172,6 @@ const checkedInClient = async ({ clientId, bookingId }) => {
     }
 }
 
-
 const checkBookingStatus = async (booking) => {
     try {
         // const now = new Date();
@@ -171,26 +187,25 @@ const checkBookingStatus = async (booking) => {
         // const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
 
         // if (checkInExpired) {
-            booking.status = 'no-show';
-            await booking.save();
+        booking.status = 'no-show';
+        await booking.save();
 
 
-            // if (slot.bookings) {
-            //     slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
-            //     slot.bookedCount = Math.max(slot.bookedCount - 1, 0);
+        // if (slot.bookings) {
+        //     slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
+        //     slot.bookedCount = Math.max(slot.bookedCount - 1, 0);
 
-            //     if (slot.isFull) {
-            //         slot.isFull = false;
-            //     }
+        //     if (slot.isFull) {
+        //         slot.isFull = false;
+        //     }
 
-            //     await slot.save();
-            // }
+        //     await slot.save();
+        // }
         // }
     } catch (error) {
         console.error(error)
     }
 };
-
 
 const checkExpiredBookings = async () => {
     try {
@@ -221,8 +236,6 @@ const checkExpiredBookings = async () => {
     }
 };
 
-
-
 const autoCancelation = async (booking) => {
     try {
         // const now = new Date()
@@ -238,20 +251,20 @@ const autoCancelation = async (booking) => {
         // const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
 
         // if (checkInExpired) {
-            booking.status = 'cancelled';
-            await booking.save();
+        booking.status = 'cancelled';
+        await booking.save();
 
 
-            if (slot.bookings) {
-                slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
-                slot.bookedCount = Math.max(slot.bookedCount - 1, 0);
+        if (slot.bookings) {
+            slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
+            slot.bookedCount = Math.max(slot.bookedCount - 1, 0);
 
-                if (slot.isFull) {
-                    slot.isFull = false;
-                }
-
-                await slot.save();
+            if (slot.isFull) {
+                slot.isFull = false;
             }
+
+            await slot.save();
+        }
         // }
     } catch (error) {
         console.error(error)
@@ -285,7 +298,6 @@ cron.schedule('*/15 * * * *', () => {
     checkAutoCancelation()
     checkExpiredBookings()
 });
-
 
 // Todo : recommandation => from current date to next day.
 const recommendations = async () => {
