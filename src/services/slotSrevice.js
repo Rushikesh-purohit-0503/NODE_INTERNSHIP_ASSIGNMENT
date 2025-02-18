@@ -168,7 +168,7 @@ const deleteSlots = async ({ expertId, startDate, endDate }) => {
             date: { $gte: startDate, $lte: endDate },
         });
         if (result.deletedCount > 0) {
-            await redis.del(cacheKey);  
+            await client.del(cacheKey);  
             // console.log(`Cache for ${cacheKey} invalidated.`);
         }
 
@@ -190,7 +190,7 @@ const getAllSlots = async ({ expertId }) => {
             const bookedSlots = []
             const expert_id = new mongoose.Types.ObjectId(expertId).toString()
             const cacheKey = `availableSlots:${expert_id}`;
-            let cachedAvailableSlots = await redis.get(cacheKey)
+            let cachedAvailableSlots = await client.get(cacheKey)
 
             if (JSON.parse(cachedAvailableSlots)) {
                 return {
@@ -222,7 +222,7 @@ const getAllSlots = async ({ expertId }) => {
 
                 }
             )
-            await redis.setex(cacheKey, 3600, JSON.stringify(availableSlots))
+            await client.setex(cacheKey, 3600, JSON.stringify(availableSlots))
             return {
                 status: true,
                 availableSlots: availableSlots,
