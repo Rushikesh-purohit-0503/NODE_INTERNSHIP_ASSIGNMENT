@@ -32,24 +32,24 @@ const booking = async ({ clientId, expertId, date, time }) => {
                 message: "Bookings are not allowed on weekends (Saturday and Sunday)."
             }
         }
-        
-        const taskId = `${clientId}-${expertId}-${date}-${time}`;  
+
+        const taskId = `${clientId}-${expertId}-${date}-${time}`;
         const queueKey = `expert:${expertId}:queue`;
 
-       
+
         await redis.lpush(queueKey, taskId);
 
-        
+
         const currentConcurrency = await redis.get(`expert:${expertId}:concurrency`);
         if (currentConcurrency >= MAX_CONCURRENT_BOOKINGS) {
-           
+
             return {
                 status: false,
                 message: "Too many bookings are being processed for this expert. Please try again later."
             };
         }
 
-        
+
         await redis.incr(`expert:${expertId}:concurrency`);
         const slot = await Slot.findOneAndUpdate(
             {
@@ -294,11 +294,13 @@ const checkAutoCancelation = async () => {
     }
 }
 
-cron.schedule('*/15 * * * *', () => {
-    checkAutoCancelation()
-    checkExpiredBookings()
-});
 
+const startBackgroundJob = () => {
+    cron.schedule('*/15 * * * *', () => {
+        checkAutoCancelation()
+        checkExpiredBookings()
+    });
+}
 // Todo : recommandation => from current date to next day.
 const recommendations = async () => {
     try {
@@ -460,5 +462,5 @@ module.exports = {
     cancel_delete_Booking,
     getAllBookings,
     checkedInClient,
-
+    startBackgroundJob
 }
