@@ -121,7 +121,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
             await Slot.findByIdAndUpdate(slot._id, { isFull: true });
         }
         await redis.decr(`expert:${expertId}:concurrency`);
-        await redis.decr(`expert:${expertId}:concurrency`);
+        await redis.lrem(`expert:${expertId}:concurrency`);
         return {
             status: true,
             message: "Booking created successfully.",
