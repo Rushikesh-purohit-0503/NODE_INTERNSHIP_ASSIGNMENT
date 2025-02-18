@@ -158,27 +158,34 @@ const checkedInClient = async ({ clientId, bookingId }) => {
 
 const checkBookingStatus = async (booking) => {
     try {
-        const now = new Date();
-        const gracePeriodEnd = new Date(booking.createdAt.getTime() + booking.gracePeriod * 60000);
-        const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
+        // const now = new Date();
 
-        if (checkInExpired) {
+
+        // const slot = await Slot.findById(booking.slotId);
+        // if (!slot || !slot.startTime) return;
+
+
+        // const slotStartTime = new Date(slot.startTime);
+        // const gracePeriodEnd = new Date(slotStartTime.getTime() + booking.gracePeriod * 60000);
+
+        // const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
+
+        // if (checkInExpired) {
             booking.status = 'no-show';
             await booking.save();
-            // const slot = await Slot.findById(booking?.slotId);
 
-            // if (slot && slot.bookings) {
 
+            // if (slot.bookings) {
             //     slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
-            //     slot.bookedCount = slot.bookedCount - 1
+            //     slot.bookedCount = Math.max(slot.bookedCount - 1, 0);
+
             //     if (slot.isFull) {
-            //         slot.isFull = false
+            //         slot.isFull = false;
             //     }
+
             //     await slot.save();
             // }
-            // // Optionally, delete the booking after no-show
-            // await Booking.deleteOne({ _id: booking._id }); // Corrected deletion method
-        }
+        // }
     } catch (error) {
         console.error(error)
     }
@@ -187,30 +194,65 @@ const checkBookingStatus = async (booking) => {
 
 const checkExpiredBookings = async () => {
     try {
-        const expiredBookings = await Booking.find({
+        const now = new Date(new Date().getTime() + 19800000);
+
+        const noShowBookings = await Booking.find({
             status: 'booked',
             checkInTime: { $eq: null },
-            createdAt: { $lte: new Date(new Date().getTime() - 15 * 60000) },
+        }).populate('slotId');
+
+        const filteredBookings = noShowBookings.filter(booking => {
+            if (!booking.slotId || !booking.slotId.startTime) { return false };
+            const slotStartTime = new Date(booking.slotId.startTime);
+            const gracePeriodEnd = new Date(slotStartTime.getTime() + 19800000 + booking.gracePeriod * 60000);
+            console.log(gracePeriodEnd)
+            console.log("now", now)
+            console.log(now > gracePeriodEnd)
+            return now > gracePeriodEnd;
         });
-        console.log("expiredBookings",expiredBookings)
-        expiredBookings.forEach(async (booking) => {
+
+        console.log("Expired Bookings:", filteredBookings);
+
+        for (const booking of filteredBookings) {
             await checkBookingStatus(booking);
-        });
+        }
     } catch (error) {
-        console.error(error)
+        console.error(error);
     }
 };
 
 
+
 const autoCancelation = async (booking) => {
     try {
-        const now = new Date()
-        const gracePeriodEnd = new Date(booking.updatedAt.getTime() + booking.gracePeriod * 60000);
-        const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
-        if (checkInExpired) {
+        // const now = new Date()
+
+
+        const slot = await Slot.findById(booking.slotId);
+        if (!slot || !slot.startTime) return;
+
+
+        // const slotStartTime = new Date(slot.startTime);
+        // const gracePeriodEnd = new Date(slotStartTime.getTime() + booking.gracePeriod  * 60000);
+
+        // const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
+
+        // if (checkInExpired) {
             booking.status = 'cancelled';
             await booking.save();
-        }
+
+
+            if (slot.bookings) {
+                slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
+                slot.bookedCount = Math.max(slot.bookedCount - 1, 0);
+
+                if (slot.isFull) {
+                    slot.isFull = false;
+                }
+
+                await slot.save();
+            }
+        // }
     } catch (error) {
         console.error(error)
     }
@@ -218,21 +260,28 @@ const autoCancelation = async (booking) => {
 
 const checkAutoCancelation = async () => {
     try {
-        const no_ShowBookings = await Booking.find({
+        const now = new Date(new Date().getTime() + 19800000);
+        const noShowBookings = await Booking.find({
             status: 'no-show',
             checkInTime: { $eq: null },
-            updatedAt: { $lte: new Date(new Date().getTime() - 15 * 60000) },
+        }).populate('slotId');
+        const filteredBookings = noShowBookings.filter(booking => {
+            if (!booking.slotId || !booking.slotId.startTime) { return false };
+            const slotStartTime = new Date(booking.slotId.startTime);
+            const gracePeriodEnd = new Date(slotStartTime.getTime() + 19800000 + booking.gracePeriod * 60000);
+
+            return now > gracePeriodEnd;
         });
-        console.log("noshow bookings",no_ShowBookings)
-        no_ShowBookings.forEach(async (booking) => {
-            await autoCancelation(booking)
-        })
+        console.log("noshow bookings", filteredBookings)
+        for (const booking of filteredBookings) {
+            await autoCancelation(booking);
+        }
     } catch (error) {
         console.error(error)
     }
 }
 
-cron.schedule('* * * * *', () => {
+cron.schedule('*/15 * * * *', () => {
     checkAutoCancelation()
     checkExpiredBookings()
 });
@@ -276,47 +325,83 @@ const recommendations = async () => {
 
 const cancel_delete_Booking = async ({ clientId, bookingId }) => {
     try {
+        // Check if the booking data is cached in Redis
+        let cachedBooking = await redis.get(`booking:${bookingId}`);
+        if (cachedBooking) {
+            cachedBooking = JSON.parse(cachedBooking);
+        } else {
+            const booking = await Booking.findById(bookingId);
 
-        const booking = await Booking.findById(bookingId)
-        if (!booking) return {
-            status: false,
-            message: "Booking not found",
-        };
+            if (!booking) {
+                return {
+                    status: false,
+                    message: "Booking not found",
+                };
+            }
 
-        if (booking.clientId.toString() !== clientId.toString()) {
-            return {
-                status: false,
-                message: "Unauthorized: You do not have permission to cancel this booking.",
-            };
+            if (booking.clientId.toString() !== clientId.toString()) {
+                return {
+                    status: false,
+                    message: "Unauthorized: You do not have permission to cancel this booking.",
+                };
+            }
+
+
+            await redis.setex(`booking:${bookingId}`, 3600, JSON.stringify(booking));
+
+            cachedBooking = booking;
         }
-        const slot = await Slot.findById(booking.slotId)
 
 
-        if (!slot) return {
-            status: false,
-            message: "The slot associated with this booking was not found."
+        let cachedSlot = await redis.get(`slot:${cachedBooking.slotId}`);
+        if (cachedSlot) {
+            cachedSlot = JSON.parse(cachedSlot);
+        } else {
+            const slot = await Slot.findById(cachedBooking.slotId);
+            if (!slot) {
+                return {
+                    status: false,
+                    message: "The slot associated with this booking was not found."
+                };
+            }
+
+
+            await redis.setex(`slot:${cachedBooking.slotId}`, 3600, JSON.stringify(slot));
+
+            cachedSlot = slot;
         }
 
-        slot.bookings = slot.bookings.filter((id) => id.toString() !== bookingId.toString())
-        slot.bookedCount = Math.max(slot.bookings.length, 0)
-        slot.isFull = slot.bookedCount >= slot.maxBookings
-        await slot.save()
 
-        await Booking.findByIdAndDelete(bookingId)
+        cachedSlot.bookings = cachedSlot.bookings.filter((id) => id.toString() !== bookingId.toString());
+        cachedSlot.bookedCount = Math.max(cachedSlot.bookings.length, 0);
+        cachedSlot.isFull = cachedSlot.bookedCount >= cachedSlot.maxBookings;
+
+
+        await Slot.findByIdAndUpdate(cachedSlot._id, {
+            bookings: cachedSlot.bookings,
+            bookedCount: cachedSlot.bookedCount,
+            isFull: cachedSlot.isFull
+        });
+
+        await Booking.findByIdAndDelete(bookingId);
+
+
+        await redis.del(`booking:${bookingId}`);
+        await redis.setex(`slot:${cachedSlot._id}`, 3600, JSON.stringify(cachedSlot)); // Update the slot cache
 
         return {
             status: true,
-            message: "Booking canceled succcessfully."
-        }
+            message: "Booking canceled successfully."
+        };
     } catch (error) {
-        throw new Error(error)
-
+        console.error("Error while canceling or deleting booking:", error);
+        throw new Error("Error while canceling or deleting booking: " + error);
     }
-}
+};
 
 const getAllBookings = async ({ clientId }) => {
     try {
-        console.log(new Date(new Date().getTime()))
+        // console.log(new Date(new Date().getTime()))
         const cacheKey = `clientBookings:${clientId.toString()}`;
         const cachedBookings = await redis.get(cacheKey);
 
@@ -327,7 +412,7 @@ const getAllBookings = async ({ clientId }) => {
                 data: JSON.parse(cachedBookings)
             }
         }
-        const bookings = await Booking.find({ clientId: clientId }).select('-__v -createdAt -updatedAt')
+        const bookings = await Booking.find({ clientId: clientId, status: 'booked' }).select('-__v -createdAt -updatedAt')
         if (!bookings) return {
             status: false,
             message: "No bookings associated with provided client-Id ",

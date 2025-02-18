@@ -2,7 +2,7 @@ const Slot = require('../models/expertSlotModel')
 const Booking = require('../models/bookingModel');
 const { default: mongoose } = require('mongoose');
 const { RRule } = require('rrule');
-const { redis } = require('../utils/Redis');
+const { redis:client } = require('../utils/Redis');
 
 const createSlots = async ({
     expertId,
@@ -24,7 +24,18 @@ const createSlots = async ({
         // Combine date and time into Date objects for proper handling
         const startDateTime = new Date(`${date}T${startTime}`);
         const endDateTime = new Date(`${date}T${endTime}`);
+        
+        const cacheKey = `overlap:${expertId}:${startDateTime.toISOString()}:${endDateTime.toISOString()}`;
+        const cachedOverlap = await client.get(cacheKey);
 
+        if (cachedOverlap) {
+            
+            return {
+                status: false,
+                message: "overlapping slots are not allowed",
+                data: {}
+            };
+        }
         if (startDateTime >= endDateTime) {
             return {
                 status: false,
@@ -42,6 +53,7 @@ const createSlots = async ({
         });
 
         if (overlappingSlots.length) {
+            await client.setex(cacheKey, 3600, JSON.stringify(overlappingSlots));
             return {
                 status: false,
                 message: "overlapping slots are not allowed",
@@ -82,6 +94,9 @@ const createSlots = async ({
                     maxBookings: slotSize,
                 };
             });
+
+            const cacheKeyRecurring = `recurring:${expertId}:${givenDate.toISOString()}`;
+            await client.setex(cacheKeyRecurring, 3600, JSON.stringify(recurringSlots));
 
             // Check for conflicts in recurring slots
             const slotConflicts = await Slot.find({
@@ -129,6 +144,10 @@ const createSlots = async ({
                 data: {},
             };
         }
+
+        const cacheKeyNewSlot = `slot:${expertId}:${startDateTime.toISOString()}:${endDateTime.toISOString()}`;
+        await client.setex(cacheKeyNewSlot, 3600, JSON.stringify(newSlot));
+
         return {
             status: true,
             message: "New slot created successfully.",
@@ -148,7 +167,11 @@ const deleteSlots = async ({ expertId, startDate, endDate }) => {
             expertId,
             date: { $gte: startDate, $lte: endDate },
         });
-        await redis.del(cacheKey)
+        if (result.deletedCount > 0) {
+            await redis.del(cacheKey);  
+            // console.log(`Cache for ${cacheKey} invalidated.`);
+        }
+
         return result;
     } catch (error) {
         console.error("Error while deleting slots", error)
@@ -227,8 +250,8 @@ const updateRecurringSlots = async ({
     recurringDays = [1, 2, 3, 4, 5],
 }) => {
     try {
-        // Validate timing inputs
         const cacheKey = `availableSlots:${expertId}`;
+        // Validate timing inputs
         if (
             (newStartTime || newEndTime) &&
             new Date(`${startDate}T${newStartTime}`) >= new Date(`${startDate}T${newEndTime}`)
@@ -249,6 +272,14 @@ const updateRecurringSlots = async ({
         }
         // Update a specific slot if slotId is provided
         if (slotId) {
+            const cachedSlot = await client.get(`slot:${expertId}:${slotId}`);
+            if (cachedSlot) {
+                return {
+                    status: false,
+                    message: "Slot is cached and cannot be updated at the moment.",
+                    data: JSON.parse(cachedSlot)
+                };
+            }
             const slot = await Slot.findOne({ _id: slotId, expertId });
 
             if (!slot) {
@@ -263,8 +294,17 @@ const updateRecurringSlots = async ({
                 return {
                     status: false,
                     message: "The specified slot is a recurring slot.",
-                    data: {slot}
+                    data: { slot }
                 }
+            }
+            const cacheKeyConflict = `conflict:${expertId}:${startDate}:${newStartTime}:${newEndTime}`;
+            const cachedConflict = await client.get(cacheKeyConflict);
+            if (cachedConflict) {
+                return {
+                    status: false,
+                    message: "Conflicts found with the updated schedule (cached). Please adjust.",
+                    data: {}
+                };
             }
 
             // Check for conflicts with other slots
@@ -278,6 +318,7 @@ const updateRecurringSlots = async ({
             });
             console.log(conflict)
             if (conflict) {
+                await client.setex(cacheKeyConflict, 3600, JSON.stringify(conflict));
                 return {
                     status: false,
                     message: "Conflicts found with the updated schedule. Please adjust.",
@@ -295,7 +336,8 @@ const updateRecurringSlots = async ({
                 },
 
             );
-            await redis.setex(cacheKey, 3600, JSON.stringify(updatedSlot))
+            await client.setex(`slot:${expertId}:${updatedSlot._id}`, 3600, JSON.stringify(updatedSlot));
+
             return {
                 status: true,
                 message: "Slot updated successfully.",
@@ -342,6 +384,16 @@ const updateRecurringSlots = async ({
         const newStart = newStartTime ? new Date(`${startDate}T${newStartTime}:00Z`) : null;
         const newEnd = newEndTime ? new Date(`${startDate}T${newEndTime}:00Z`) : null;
         // console.log(newStart)
+
+        const cacheKeyConflictRecurring = `conflictRecurring:${expertId}:${startDate}:${newStartTime}:${newEndTime}`;
+        const cachedConflictRecurring = await client.get(cacheKeyConflictRecurring);
+        if (cachedConflictRecurring) {
+            return {
+                status: false,
+                message: "Conflicts found with the updated recurring schedule (cached). Please adjust.",
+                data: {}
+            };
+        }
         const conflict = await Slot.findOne({
             expertId,
             date: { $in: filteredSlots.map((slot) => slot.date) },
@@ -352,6 +404,7 @@ const updateRecurringSlots = async ({
         });
 
         if (conflict) {
+            await client.setex(cacheKeyConflictRecurring, 3600, JSON.stringify(conflict));
             return {
                 status: false,
                 message: "Conflicts found with the updated schedule. Please adjust.",
@@ -377,7 +430,7 @@ const updateRecurringSlots = async ({
                 )
             )
         )
-        await redis.setex(cacheKey, 3600, JSON.stringify(updatedSlots))
+          await client.setex(cacheKey, 3600, JSON.stringify(updatedSlots));
         return {
             status: true,
             message: "Recurring slots updated successfully.",
