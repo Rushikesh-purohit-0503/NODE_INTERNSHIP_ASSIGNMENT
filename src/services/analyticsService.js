@@ -54,22 +54,24 @@ const getAnalytics = async () => {
                 }
             }
         ]);
+        console.log(bookedSlots[0])
         const totalBookedSlots = bookedSlots[0]?.totalBookedSlots || 0;
         const utilizationRate = totalSlots
             ? ((totalBookedSlots / totalSlots) * 100).toFixed(2)
             : 0;
 
         // Get no-show statistics
-        const noShowStats = await Booking.aggregate([
+        const noShowAndCancelStats = await Booking.aggregate([
             {
                 $match: {
-                    status: "no-show" || "cancelled"
+                    status: {$in: ["no-show","cancelled"]} 
                 }
             },
             {
                 $group: {
                     _id: "$clientId",
-                    noShowCount: { $sum: 1 }
+                    noShowCount: { $sum: { $cond: [{ $eq: ["$status", "no-show"] }, 1, 0] } },
+                    cancelledCount: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } }
                 }
             },
             {
@@ -92,7 +94,8 @@ const getAnalytics = async () => {
                     totalBookings: 1,
                     clientName: "$clientDetails.name",
                     clientEmail: "$clientDetails.email",
-                    noShowCount: 1
+                    noShowCount: 1,
+                    cancelledCount: 1
                 }
 
             }
@@ -106,7 +109,7 @@ const getAnalytics = async () => {
                 totalSlots,
                 totalBookedSlots,
                 utilizationRate: `${utilizationRate}%`,
-                noShowStats
+                noShowAndCancelStats
             }
         };
     } catch (error) {
