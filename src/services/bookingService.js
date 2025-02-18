@@ -16,7 +16,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
     try {
 
         const weeklyBookings = await checkWeeklyLimit(clientId, expertId);
-        if (weeklyBookings >= 3) {
+        if (weeklyBookings > 3) {
             return {
                 status: false,
                 message: "You cannot book more than 3 slots with this expert in a week."
@@ -105,11 +105,6 @@ const booking = async ({ clientId, expertId, date, time }) => {
 
         })
 
-        // const ttl = bookSlot.gracePeriod * 60; 
-        // const redisKey = `booking:noshow:${bookSlot._id}`
-        // await redis.setex(redisKey, ttl, JSON.stringify({ bookingId: bookSlot._id }));
-
-
         const updatedSlot = await Slot.findByIdAndUpdate(slot._id, {
             $push: { bookings: bookSlot._id },
             $inc: { bookedCount: 1 }
@@ -121,7 +116,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
             await Slot.findByIdAndUpdate(slot._id, { isFull: true });
         }
         await redis.decr(`expert:${expertId}:concurrency`);
-        await redis.lrem(`expert:${expertId}:concurrency`);
+        await redis.lrem(queueKey, 1, taskId);
         return {
             status: true,
             message: "Booking created successfully.",
@@ -174,34 +169,8 @@ const checkedInClient = async ({ clientId, bookingId }) => {
 
 const checkBookingStatus = async (booking) => {
     try {
-        // const now = new Date();
-
-
-        // const slot = await Slot.findById(booking.slotId);
-        // if (!slot || !slot.startTime) return;
-
-
-        // const slotStartTime = new Date(slot.startTime);
-        // const gracePeriodEnd = new Date(slotStartTime.getTime() + booking.gracePeriod * 60000);
-
-        // const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
-
-        // if (checkInExpired) {
         booking.status = 'no-show';
         await booking.save();
-
-
-        // if (slot.bookings) {
-        //     slot.bookings = slot.bookings.filter(id => id.toString() !== booking._id.toString());
-        //     slot.bookedCount = Math.max(slot.bookedCount - 1, 0);
-
-        //     if (slot.isFull) {
-        //         slot.isFull = false;
-        //     }
-
-        //     await slot.save();
-        // }
-        // }
     } catch (error) {
         console.error(error)
     }
@@ -238,19 +207,11 @@ const checkExpiredBookings = async () => {
 
 const autoCancelation = async (booking) => {
     try {
-        // const now = new Date()
+        
 
 
         const slot = await Slot.findById(booking.slotId);
-        if (!slot || !slot.startTime) return;
-
-
-        // const slotStartTime = new Date(slot.startTime);
-        // const gracePeriodEnd = new Date(slotStartTime.getTime() + booking.gracePeriod  * 60000);
-
-        // const checkInExpired = !booking.checkInTime && now > gracePeriodEnd;
-
-        // if (checkInExpired) {
+        if (!slot || !slot.startTime) return ;
         booking.status = 'cancelled';
         await booking.save();
 

@@ -123,8 +123,6 @@ const getAnalytics = async () => {
 };
 
 module.exports = {
-    // getNoShowStatistics,
-    // getUtilizationRate,
-    // getTotalBookingsPerExpert
+   
     getAnalytics
 }
