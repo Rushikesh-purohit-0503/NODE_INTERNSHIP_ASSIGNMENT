@@ -38,7 +38,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
 
 
         await redis.lpush(queueKey, taskId);
-
+        await redis.expire(queueKey, 3600); 
 
         const currentConcurrency = await redis.get(`expert:${expertId}:concurrency`);
         if (currentConcurrency >= MAX_CONCURRENT_BOOKINGS) {
