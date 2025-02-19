@@ -5,7 +5,7 @@ const createAuthToken = async (user) => {
         const authToken = jwt.sign({
             _id: user._id,
             name: user.name
-        }, process.env.JWT_TOKEN_SECRET, { expiresIn: process.env.JWT_TOKEN_EXPITY })
+        }, process.env.JWT_TOKEN_SECRET, { expiresIn: process.env.JWT_TOKEN_EXPIRY })
         user.authToken = authToken
         await user.save({ validationBeforeSave: false })
 
