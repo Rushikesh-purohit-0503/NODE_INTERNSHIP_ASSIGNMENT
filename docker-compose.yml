@@ -7,8 +7,7 @@ services:
     ports:
       - "6379:6379"
       - "8001:8001"
-    restart: always
-    # Use root/example as user/password credentials
+
   mongo:
     image: mongo
     restart: always
@@ -18,3 +17,22 @@ services:
     ports:
       - 27017:27017
 
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend-dev
+    ports:
+      - "3500:3500"
+
+    volumes:
+      - .:/app
+      - /app/node_modules
+    
+    depends_on:
+      - redis
+      - mongo
+
+    env_file:
+      - .env
+    command: npm run dev
