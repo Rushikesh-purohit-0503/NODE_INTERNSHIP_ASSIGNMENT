@@ -42,8 +42,6 @@ const deleteSlots = async (req, res) => {
         const { startDate, endDate } = req.body
         const expertId = req.user?._id
         if ([expertId, startDate, endDate].some((val) => (val === " "))) return res.status(400).json(new ApiResponse(400, {}, "Enter valid details."))
-
-
         const result = await slotService.deleteSlots({ expertId, startDate: new Date(startDate), endDate: new Date(endDate) })
         if (result.deletedCount === 0) {
             return res.status(404).json(new ApiResponse(404, result, "There is no slot that can be deleted"))
@@ -75,18 +73,19 @@ const getAllSlots = async (req, res) => {
 
 const updateRecurringSlots = async (req, res) => {
     try {
-        let { startDate, newStartTime, newEndTime, slotDuration, recurringDays } = req.body
+        let { startDate, newStartDate, newStartTime, newEndTime, slotDuration, recurringDays } = req.body
         const { slotId } = req.params
         let expertId = req.user?._id
-        if ([expertId, startDate, newEndTime, slotDuration, newStartTime].some((val) => (val === " "))) return res.status(400).json(new ApiResponse(400, {}, "Enter valid details."))
+        if ([expertId, startDate, newEndTime, slotDuration, newStartTime, newStartDate].some((val) => (val === " "))) return res.status(400).json(new ApiResponse(400, {}, "Enter valid details."))
         const result = await slotService.updateRecurringSlots({
             expertId: new mongoose.Types.ObjectId(expertId),
             slotId: slotId,
+            newStartDate: newStartDate,
             startDate: startDate,
             newStartTime: newStartTime,
             newEndTime: newEndTime,
-            slotDuration: slotDuration, 
-            recurringDays: recurringDays 
+            slotDuration: slotDuration,
+            recurringDays: recurringDays
         })
         if (result.status) return res.status(200).json(new ApiResponse(200, result, 'Successfully updated'))
         if (!result.status) return res.status(400).json(new ApiResponse(400, result.data, result.message))

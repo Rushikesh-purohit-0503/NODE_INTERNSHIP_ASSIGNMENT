@@ -38,7 +38,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
 
 
         await redis.lpush(queueKey, taskId);
-        await redis.expire(queueKey, 3600); 
+        await redis.expire(queueKey, 3600);
 
         const currentConcurrency = await redis.get(`expert:${expertId}:concurrency`);
         if (currentConcurrency >= MAX_CONCURRENT_BOOKINGS) {
@@ -59,9 +59,6 @@ const booking = async ({ clientId, expertId, date, time }) => {
                 isBlocked: false,
                 isFull: false,
             },
-            // {
-            //     $set: { isFull: true } // Temporarily marked as full to prevent race conditions
-            // },
             {
                 new: true
             }
@@ -88,7 +85,7 @@ const booking = async ({ clientId, expertId, date, time }) => {
         });
 
         if (existingBooking) {
-            await Slot.findByIdAndUpdate(slot._id, { isFull: false });
+            // await Slot.findByIdAndUpdate(slot._id, { isFull: false });
             return {
                 status: false,
                 message: "You have already booked this slot.",
@@ -110,7 +107,12 @@ const booking = async ({ clientId, expertId, date, time }) => {
             $inc: { bookedCount: 1 }
         }, { new: true })
 
-
+        if (!updatedSlot) {
+            return {
+                status: false,
+                message: "The Slot is being updated by other client"
+            }
+        }
         // Only mark the slot as full if the total bookings now equal the total capacity
         if (updatedSlot.bookedCount >= updatedSlot.maxBookings) {
             await Slot.findByIdAndUpdate(slot._id, { isFull: true });
@@ -124,6 +126,8 @@ const booking = async ({ clientId, expertId, date, time }) => {
         };
 
     } catch (error) {
+        await redis.decr(`expert:${expertId}:concurrency`);
+        await redis.lrem(`expert:${expertId}:queue`, 1, `${clientId}-${expertId}-${date}-${time}`);
         console.error("Error Booking slot", error)
     }
 }
@@ -169,8 +173,17 @@ const checkedInClient = async ({ clientId, bookingId }) => {
 
 const checkBookingStatus = async (booking) => {
     try {
+        const cacheKey = `clientBookings:${booking.clientId.toString()}`;
+        const cachedStatus = await redis.get(cacheKey);
+
+        if (JSON.parse(cachedStatus) === "no-show") {
+            console.log(`Booking ${booking._id} already marked as no-show, skipping update.`);
+            return;
+        }
+
         booking.status = 'no-show';
         await booking.save();
+        await redis.set(cacheKey, "no-show", "EX", 24 * 60 * 60);
     } catch (error) {
         console.error(error)
     }
@@ -189,9 +202,9 @@ const checkExpiredBookings = async () => {
             if (!booking.slotId || !booking.slotId.startTime) { return false };
             const slotStartTime = new Date(booking.slotId.startTime);
             const gracePeriodEnd = new Date(slotStartTime.getTime() + 19800000 + booking.gracePeriod * 60000);
-            console.log(gracePeriodEnd)
-            console.log("now", now)
-            console.log(now > gracePeriodEnd)
+            // console.log(gracePeriodEnd)
+            // console.log("now", now)
+            // console.log(now > gracePeriodEnd)
             return now > gracePeriodEnd;
         });
 
@@ -207,11 +220,11 @@ const checkExpiredBookings = async () => {
 
 const autoCancelation = async (booking) => {
     try {
-        
+
 
 
         const slot = await Slot.findById(booking.slotId);
-        if (!slot || !slot.startTime) return ;
+        if (!slot || !slot.startTime) return;
         booking.status = 'cancelled';
         await booking.save();
 
@@ -387,7 +400,7 @@ const getAllBookings = async ({ clientId }) => {
                 data: JSON.parse(cachedBookings)
             }
         }
-        const bookings = await Booking.find({ clientId: clientId, status: 'booked' }).select('-__v -createdAt -updatedAt')
+        const bookings = await Booking.find({ clientId: clientId, status: 'booked' }).populate([{ path: 'expertId', select: 'name' }]).populate({ path: 'slotId', select: 'startTime endTime' }).select('-__v -createdAt -updatedAt')
         if (!bookings) return {
             status: false,
             message: "No bookings associated with provided client-Id ",
