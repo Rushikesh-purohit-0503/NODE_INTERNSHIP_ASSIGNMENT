@@ -1,6 +1,5 @@
 const slotModel = require('../models/expertSlotModel')
 const { ApiResponse } = require('../utils/ApiResponse')
-const { ApiError } = require('../utils/ApiErrors')
 const slotService = require('../services/slotSrevice')
 const { default: mongoose } = require('mongoose')
 
@@ -29,6 +28,7 @@ const createSlots = async (req, res, next) => {
         return res.status(201).json(new ApiResponse(201, newSlot.data, newSlot.message))
 
     } catch (error) {
+        console.error("createSlots--------->", error)
         return res.status(400).json(new ApiResponse(400, error, error.message))
 
         // console.error(error)
@@ -48,6 +48,7 @@ const deleteSlots = async (req, res) => {
         }
         return res.status(200).json(new ApiResponse(200, result, "Slots deleted succesfully"))
     } catch (error) {
+        console.error("deleteSlots--------->", error)
         return res.status(500).json(new ApiResponse(500, result, "Error deleting slot"))
     }
 }
@@ -64,8 +65,9 @@ const getAllSlots = async (req, res) => {
 
         return res.status(200).json(new ApiResponse(200, { availableSlots: result.availableSlots, bookedSlots: result.bookedSlots }, `Slots for user fetched`))
     } catch (error) {
-        throw new ApiError(500, "Error while fetching", error)
+        console.error("getAllSlots--------->", error)
         return res.status(500).json(new ApiResponse(500, { error: error }, "Error while fetching"))
+        // throw new ApiError(500, "Error while fetching", error)
         // console.log(error)
         // throw new ApiError(500, 'Error fetching slots', error)
     }
@@ -90,7 +92,9 @@ const updateRecurringSlots = async (req, res) => {
         if (result.status) return res.status(200).json(new ApiResponse(200, result, 'Successfully updated'))
         if (!result.status) return res.status(400).json(new ApiResponse(400, result.data, result.message))
     } catch (error) {
-        throw new ApiError(500, {}, error)
+        console.error("updateRecurringSlots--------->", error)
+        return res.status(500).json(new ApiResponse(500, {}, "Error updating slots"))
+        // throw new ApiError(500, {}, error)
     }
 }
 

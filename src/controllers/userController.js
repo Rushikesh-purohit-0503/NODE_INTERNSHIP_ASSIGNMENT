@@ -1,6 +1,5 @@
 const userModel = require('../models/userModel')
 const { ApiResponse } = require('../utils/ApiResponse')
-const { ApiError } = require('../utils/ApiErrors')
 const { EncryptPassword, verifyPassword } = require('../utils/Password')
 const createAuthToken = require('../utils/token')
 const { default: mongoose } = require('mongoose')
@@ -17,7 +16,6 @@ const register = async (req, res) => {
         if ([email, name, password, role].some((val) => (val === " "))) {
             return res.status(400).json(new ApiResponse(400, { email, name, role }, "Enter valid details"))
         }
-        try {
             const exisitingUser = await userModel.findOne({ email: email }).exec()
             if (exisitingUser) {
                 return res.status(400).json(new ApiResponse(400, exisitingUser.email, `User with email '${exisitingUser.email}' already exists!`))
@@ -34,11 +32,9 @@ const register = async (req, res) => {
                     return res.status(201).json(new ApiResponse(201, newUser, "User created successfully"))
                 }
             }
-        } catch (error) {
-            throw new ApiError(500, 'User not created', error)
-        }
     } catch (error) {
-        throw new ApiError(500, "Error creating user", error)
+        console.error("register--------->",error)
+        return res.status(500).json(new ApiResponse(500, {}, "Error creating user"))
     }
 }
 
@@ -49,34 +45,28 @@ const login = async (req, res) => {
         if ([email, password].some((val) => (val === ' '))) {
             return res.status(400).json(new ApiResponse(400, {}, "Enter valid details"))
         }
-        let user = {}
+        let user = await userModel.findOne({ email: email }).exec()
+        if (!user) { return res.status(400).json(new ApiResponse(400, {}, "User not found (Enter valid email) ")) }
 
-        try {
-            user = await userModel.findOne({ email: email }).exec()
-            if (!user) { return res.status(400).json(new ApiResponse(400, {}, "User not found (Enter valid email) ")) }
-        } catch (error) {
-            throw new ApiError(400, "error finding in user", error)
+
+        const isValid = await verifyPassword(user.password, password)
+        if (!isValid) {
+            return res.status(400).json(new ApiResponse(400, { PasswordValidation: isValid }, "Invalid Password"))
         }
-        try {
-            const isValid = await verifyPassword(user.password, password)
-            if (!isValid) {
-                return res.status(400).json(new ApiResponse(400, { PasswordValidation: isValid }, "Invalid Password"))
-            }
-            const authToken = await createAuthToken(user)
-            const loggedInUser = await userModel.findById(user._id).select("-authToken -__v").exec()
+        const authToken = await createAuthToken(user)
+        const loggedInUser = await userModel.findById(user._id).select("-authToken -__v").exec()
 
-            return res.status(200).cookie('authToken', authToken, cookieOptions)
-                .json(new ApiResponse(200, {
-                    user: loggedInUser,
-                    authToken
-                }, "User logged in successfully"))
+        return res.status(200).cookie('authToken', authToken, cookieOptions)
+            .json(new ApiResponse(200, {
+                user: loggedInUser,
+                authToken
+            }, "User logged in successfully"))
 
-        } catch (error) {
-            throw new ApiError(400, "error verifying password", error)
-        }
+    }
 
-    } catch (error) {
-        throw new ApiError(500, "Error while login", error)
+    catch (error) {
+        console.error("login-------->",error)
+        return res.status(500).json(new ApiResponse(500, {}, "Error while login"))
     }
 }
 const logout = async (req, res) => {
@@ -85,8 +75,7 @@ const logout = async (req, res) => {
         let { id: userId } = req.user._id
         if (!authToken) return res.status(400).json(new ApiResponse(400, {}, "User Already logged out"))
 
-        try {
-            await userModel.findByIdAndUpdate({_id: new mongoose.Types.ObjectId(userId)}, {
+            await userModel.findByIdAndUpdate({ _id: new mongoose.Types.ObjectId(userId) }, {
                 $set: {
                     authToken: undefined
                 }
@@ -94,14 +83,11 @@ const logout = async (req, res) => {
                 { new: true }
             )
             return res.status(200).clearCookie("authToken", cookieOptions).json(new ApiResponse(200, {}, "User logged out successfully"))
-        } catch (error) {
-            throw new ApiError(500,"",error)
-            return res.status(400).json(new ApiResponse(400,{},error.message))
-        }
 
 
     } catch (error) {
-        throw new ApiError(500,"",error)
+        console.error('logout----->',error)
+        return res.status(500).json(new ApiResponse(500, {}, "Error while logging out"))
     }
 }
 module.exports = {

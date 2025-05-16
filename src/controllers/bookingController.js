@@ -1,8 +1,6 @@
 const bookingModel = require('../models/bookingModel')
 const { ApiResponse } = require('../utils/ApiResponse')
-const { ApiError } = require('../utils/ApiErrors')
 const bookingService = require('../services/bookingService')
-const { default: mongoose } = require('mongoose')
 
 
 const bookSlot = async (req, res,) => {
@@ -25,8 +23,8 @@ const bookSlot = async (req, res,) => {
 
         return res.status(201).json(new ApiResponse(200, booking.data, booking.message))
     } catch (error) {
-        console.error(error)
-        throw new ApiError('500', "error booking slot", error.message)
+        console.error("slotBooking-------->",error)
+        return res.status(500).json(new ApiResponse(500, {}, "Error booking slot"))
     }
 }
 
@@ -36,6 +34,7 @@ const Recommendations = async (req, res) => {
         if (!recommended || typeof recommended !== 'object') return res.status(404).json(new ApiResponse(404, recommended, "No slots available in near future"))
         return res.status(200).json(new ApiResponse(200, { recommendedSlots: recommended }, "This are the slots available for near future."))
     } catch (error) {
+        console.error("Recommendations--------->", error)
         return res.status(500).json(new ApiResponse(500, error, error.message))
     }
 }
@@ -53,6 +52,7 @@ const cancelBooking = async (req, res) => {
         if (canceled.status) return res.status(200).json(new ApiResponse(200, canceled, canceled.message))
         else return res.status(400).json(new ApiResponse(400, canceled, canceled.message))
     } catch (error) {
+        console.error("cancelBooking--------->", error)
         return res.status(500).json(new ApiResponse(500, error, error.message))
     }
 }
@@ -68,6 +68,7 @@ const getAllBookingsForClient = async (req, res) => {
 
 
     } catch (error) {
+        console.error("getAllBookingsForClient--------->", error)
         return res.status(500).json(new ApiResponse(500, error, "Error fetching bookings"))
     }
 }
@@ -83,7 +84,7 @@ const checkedInClient = async (req, res) => {
         }
         return res.status(200).json(new ApiResponse(200, result.data, result.message))
     } catch (error) {
-        console.log(error)
+        console.error("checkedInClient--------->", error)
         return res.status(500).json(new ApiResponse(500, error, "Error checked in client"))
     }
 }
